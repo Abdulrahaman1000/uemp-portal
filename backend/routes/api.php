@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Api\Admin\DepartmentController;
 use App\Http\Controllers\Api\Admin\FacultyController;
+use App\Http\Controllers\Api\Admin\CourseController;
 use App\Http\Controllers\Api\Admin\OverviewController;
+use App\Http\Controllers\Api\Admin\UserController;
 use App\Http\Controllers\Api\Admin\ProgramController;
 use App\Http\Controllers\Api\Admin\SemesterController;
 use App\Http\Controllers\Api\Admin\SessionController;
@@ -43,6 +45,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::apiResource('semesters', SemesterController::class);
         Route::post('/semesters/{semester}/activate', [SemesterController::class, 'activate']);
         // T2.5c: courses and users
+        Route::get('/courses', [CourseController::class, 'index']);
+        Route::post('/courses', [CourseController::class, 'store']);
+        Route::put('/courses/{course}', [CourseController::class, 'update']);
+        Route::delete('/courses/{course}', [CourseController::class, 'destroy']);
+        Route::get('/users', [UserController::class, 'index']);
+        Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
+        Route::patch('/users/{user}/role', [UserController::class, 'updateRole']);
         // T2.5d: read-only lists (students, lecturers, registrations, submissions, activity logs)
     });
 
