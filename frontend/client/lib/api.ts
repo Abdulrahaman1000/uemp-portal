@@ -1,17 +1,24 @@
 import type {
-  Announcement, AuthSession, Course, DashboardSummary, Enrollment, Faculty,
-  Lecturer, LoginCredentials, PortalEvent, Student, User,
+  AcademicSession, AdminDashboard, AuditLog, AuthSession, Course, Department, Faculty,
+  GradingScale, Lecturer, LoginCredentials, Paginated, Program, RegistrationRecord,
+  ResultSubmission, RolePermission, Student, User, UserRole, UserStatus,
 } from "../types/portal";
 import { MockApiError, mockRequest } from "./mock";
 
-/** Supports both exposed NEXT_PUBLIC_ settings and Vite-prefixed equivalents. */
+/** Vite exposes only VITE_ variables. VITE_API_URL is the Laravel API base URL. */
 const env = import.meta.env;
-export const API_URL = (env.VITE_NEXT_PUBLIC_API_URL || env.NEXT_PUBLIC_API_URL || env.VITE_API_URL || "").trim().replace(/\/+$/, "");
-const mockSetting = env.VITE_NEXT_PUBLIC_USE_MOCK ?? env.NEXT_PUBLIC_USE_MOCK ?? env.VITE_USE_MOCK;
-/** An explicit true/false override takes precedence; otherwise an absent API URL enables mocks. */
-export const USE_MOCK = mockSetting == null || mockSetting === "" ? !API_URL : ["true", "1"].includes(String(mockSetting).toLowerCase());
-export const AUTH_STORAGE_KEY = "northstar.portal.session";
-const SESSION_EVENT = "northstar:session-change";
+export const API_URL = String(env.VITE_API_URL || "").trim().replace(/\/+$/, "");
+const mockSetting = env.VITE_USE_MOCK;
+/** An explicit true/false override wins; otherwise an empty API URL enables mock mode. */
+export const USE_MOCK = mockSetting == null || mockSetting === ""
+  ? !API_URL
+  : ["true", "1"].includes(String(mockSetting).toLowerCase());
+
+export const AUTH_STORAGE_KEY = "uemp.session";
+const SESSION_EVENT = "uemp:session-change";
+const ROLES: UserRole[] = ["student", "lecturer", "dept_admin", "super_admin"];
+const STATUSES: UserStatus[] = ["active", "inactive", "suspended"];
+
 let memorySession: AuthSession | null = null;
 let memoryOnly = false;
 
@@ -21,10 +28,10 @@ export function isSession(value: unknown): value is AuthSession {
   const user = session.user;
   return typeof session.token === "string" && !!session.token.trim() && !!user && typeof user === "object" &&
     typeof user.id === "string" && !!user.id.trim() && typeof user.name === "string" &&
-    typeof user.email === "string" && ["student", "lecturer", "dept_admin", "super_admin"].includes(user.role) &&
+    typeof user.email === "string" && ROLES.includes(user.role) &&
     (user.department_id === null || typeof user.department_id === "string") &&
     (user.department_name === null || typeof user.department_name === "string") &&
-    ["active", "inactive", "suspended"].includes(user.status) &&
+    STATUSES.includes(user.status) &&
     (user.studentId === undefined || typeof user.studentId === "string") &&
     (user.avatarUrl === undefined || typeof user.avatarUrl === "string");
 }
@@ -84,6 +91,9 @@ export function subscribeToSession(listener: () => void): () => void {
   };
 }
 
+/** Field errors from a Laravel 422 response: { errors: { field: ["message"] } }. */
+export type FieldErrors = Record<string, string[]>;
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public details?: unknown) {
     super(message);
@@ -91,6 +101,12 @@ export class ApiError extends Error {
   }
   get isUnauthorized(): boolean { return this.status === 401; }
   get isForbidden(): boolean { return this.status === 403; }
+  get isValidation(): boolean { return this.status === 422; }
+  /** Per-field messages for a 422 response, or an empty object. */
+  get fieldErrors(): FieldErrors {
+    const errors = (this.details as { errors?: unknown } | undefined)?.errors;
+    return errors && typeof errors === "object" ? (errors as FieldErrors) : {};
+  }
 }
 
 export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
@@ -100,7 +116,7 @@ export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
   token?: string | null;
 }
 
-/** Generic JSON request. A 401 clears the matching session; a 403 preserves it. */
+/** Generic JSON request. A 401 clears the matching session; a 403 keeps it. */
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { body, token: tokenOverride, ...init } = options;
   const token = tokenOverride === undefined ? getToken() : tokenOverride;
@@ -126,11 +142,16 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   headers.set("Accept", "application/json");
   if (body !== undefined && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(`${API_URL}${normalizedPath}`, {
-    ...init,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${normalizedPath}`, {
+      ...init,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, "Cannot reach the server. Check your connection and try again.");
+  }
   const text = await response.text();
   let data: unknown;
   if (text) {
@@ -145,7 +166,29 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   return data as T;
 }
 
-export interface EnrollmentFilters { studentId?: string; courseId?: string }
+/** Builds a query string, skipping empty values. */
+export function toQuery(params: Record<string, string | number | undefined | null> = {}): string {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
+  });
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+export type ListParams = Record<string, string | number | undefined | null>;
+export type AdminResource = "faculties" | "departments" | "programs" | "courses" | "sessions";
+export interface ReportRow { label: string; value: number }
+export type ReportType = "students" | "registrations" | "results";
+export type AdminSubmissionStatus = ResultSubmission["status"];
+
+interface AdminListTypes {
+  faculties: Faculty;
+  departments: Department;
+  programs: Program;
+  courses: Course;
+  sessions: AcademicSession;
+}
 
 /** Real backend contract: paths are relative to API_URL and responses are unwrapped JSON. */
 export const api = {
@@ -156,18 +199,42 @@ export const api = {
   },
   logout: () => apiRequest<void>("/logout", { method: "POST" }),
   me: () => apiRequest<User>("/me"),
-  getDashboard: () => apiRequest<DashboardSummary>("/dashboard"),
-  getStudents: () => apiRequest<Student[]>("/students"),
-  getFaculty: () => apiRequest<Faculty[]>("/faculty"),
-  getLecturers: () => apiRequest<Lecturer[]>("/lecturers"),
-  getCourses: () => apiRequest<Course[]>("/courses"),
-  getEnrollments: (filters: EnrollmentFilters = {}) => {
-    const params = new URLSearchParams();
-    if (filters.studentId) params.set("studentId", filters.studentId);
-    if (filters.courseId) params.set("courseId", filters.courseId);
-    const query = params.toString();
-    return apiRequest<Enrollment[]>(`/enrollments${query ? `?${query}` : ""}`);
+
+  admin: {
+    dashboard: () => apiRequest<AdminDashboard>("/admin/dashboard"),
+    gradingScale: () => apiRequest<GradingScale>("/admin/grading-scale"),
+    roles: () => apiRequest<RolePermission[]>("/admin/roles"),
+
+    // Collections managed by the super admin.
+    list: <R extends AdminResource>(resource: R, params: ListParams = {}) =>
+      apiRequest<Paginated<AdminListTypes[R]>>(`/admin/${resource}${toQuery(params)}`),
+    create: <R extends AdminResource>(resource: R, body: Partial<AdminListTypes[R]>) =>
+      apiRequest<AdminListTypes[R]>(`/admin/${resource}`, { method: "POST", body }),
+    update: <R extends AdminResource>(resource: R, id: string, body: Partial<AdminListTypes[R]>) =>
+      apiRequest<AdminListTypes[R]>(`/admin/${resource}/${id}`, { method: "PUT", body }),
+    remove: (resource: AdminResource, id: string) =>
+      apiRequest<void>(`/admin/${resource}/${id}`, { method: "DELETE" }),
+
+    // Sessions and semesters: only one is current at a time.
+    activateSession: (id: string) => apiRequest<AcademicSession>(`/admin/sessions/${id}/activate`, { method: "POST" }),
+    activateSemester: (id: string) => apiRequest<unknown>(`/admin/semesters/${id}/activate`, { method: "POST" }),
+
+    // Users.
+    users: (params: ListParams = {}) => apiRequest<Paginated<User>>(`/admin/users${toQuery(params)}`),
+    setUserStatus: (id: string, status: UserStatus) =>
+      apiRequest<User>(`/admin/users/${id}/status`, { method: "PATCH", body: { status } }),
+    setUserRole: (id: string, role: UserRole) =>
+      apiRequest<User>(`/admin/users/${id}/role`, { method: "PATCH", body: { role } }),
+
+    // Read-only oversight.
+    students: (params: ListParams = {}) => apiRequest<Paginated<Student>>(`/admin/students${toQuery(params)}`),
+    lecturers: (params: ListParams = {}) => apiRequest<Paginated<Lecturer>>(`/admin/lecturers${toQuery(params)}`),
+    registrations: (params: ListParams = {}) =>
+      apiRequest<Paginated<RegistrationRecord>>(`/admin/registrations${toQuery(params)}`),
+    submissions: (params: ListParams = {}) =>
+      apiRequest<Paginated<ResultSubmission>>(`/admin/submissions${toQuery(params)}`),
+    activityLogs: (params: ListParams = {}) =>
+      apiRequest<Paginated<AuditLog>>(`/admin/activity-logs${toQuery(params)}`),
+    report: (type: ReportType) => apiRequest<ReportRow[]>(`/admin/reports/${type}`),
   },
-  getAnnouncements: () => apiRequest<Announcement[]>("/announcements"),
-  getEvents: () => apiRequest<PortalEvent[]>("/events"),
 };

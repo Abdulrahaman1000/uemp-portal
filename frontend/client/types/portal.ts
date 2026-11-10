@@ -1,3 +1,5 @@
+// Shared types for the UEMP frontend. They mirror the Laravel API contract.
+
 export type UserRole = "student" | "lecturer" | "dept_admin" | "super_admin";
 export type UserStatus = "active" | "inactive" | "suspended";
 
@@ -12,6 +14,7 @@ export interface User {
   avatarUrl?: string;
   /** Present for student accounts and used to scope student records. */
   studentId?: string;
+  lastActive?: string;
 }
 
 export interface LoginCredentials {
@@ -24,73 +27,208 @@ export interface AuthSession {
   user: User;
 }
 
-export interface Student {
-  id: string;
-  studentNumber: string;
-  name: string;
-  email: string;
-  program: string;
-  year: number;
-  status: "active" | "on-leave" | "graduated";
-  advisor: string;
+/** List responses from the API: { data, meta }. */
+export interface PageMeta {
+  current_page: number;
+  last_page: number;
+  total: number;
 }
+export interface Paginated<T> {
+  data: T[];
+  meta: PageMeta;
+}
+
+// ---------- Academic structure ----------
 
 export interface Faculty {
   id: string;
   name: string;
-  email: string;
-  department: string;
-  title: string;
+  code: string;
+  dean: string;
+  departmentCount: number;
 }
 
-export type Lecturer = Faculty;
+export interface Department {
+  id: string;
+  name: string;
+  code: string;
+  facultyId: string;
+  facultyName: string;
+  head: string;
+  programCount: number;
+}
+
+export interface Program {
+  id: string;
+  name: string;
+  award: string; // e.g. B.Sc.
+  departmentId: string;
+  departmentName: string;
+  durationYears: number;
+  studentCount: number;
+}
+
+export type SemesterName = "First" | "Second";
+
+export interface Semester {
+  id: string;
+  sessionId: string;
+  name: SemesterName;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+}
+
+export interface AcademicSession {
+  id: string;
+  name: string; // e.g. 2026/2027
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+  semesters: Semester[];
+}
+
+// ---------- People ----------
+
+export type StudentStatus = "active" | "inactive" | "suspended" | "graduated";
+
+export interface Student {
+  id: string;
+  matricNo: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  departmentName: string;
+  facultyName: string;
+  programId: string;
+  programName: string;
+  level: number; // 100, 200, ...
+  status: StudentStatus;
+}
+
+export interface Lecturer {
+  id: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  departmentName: string;
+  specialization: string;
+  courseCount: number;
+  status: UserStatus;
+}
+
+// ---------- Courses and registration ----------
+
+export type CourseType = "core" | "elective";
 
 export interface Course {
   id: string;
   code: string;
   title: string;
-  department: string;
-  credits: number;
-  instructorId: string;
-  instructorName: string;
-  term: string;
-  schedule: string;
-  location: string;
-  capacity: number;
-  enrolled: number;
+  units: number;
+  level: number;
+  semester: SemesterName;
+  type: CourseType;
+  departmentId: string;
+  departmentName: string;
+  programId: string;
+  lecturerId: string | null;
+  lecturerName: string | null;
 }
 
-export interface Enrollment {
+export interface RegisteredCourse {
+  courseId: string;
+  code: string;
+  title: string;
+  units: number;
+}
+
+export interface RegistrationRecord {
   id: string;
   studentId: string;
+  studentName: string;
+  matricNo: string;
+  departmentName: string;
+  level: number;
+  sessionName: string;
+  semester: SemesterName;
+  courses: RegisteredCourse[];
+  totalUnits: number;
+  registeredAt: string;
+}
+
+// ---------- Results ----------
+
+export type ResultStatus = "draft" | "submitted" | "approved" | "rejected" | "reopened";
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actorName: string;
+  actorRole: UserRole;
+  action: string;
+  note?: string;
+}
+
+export interface ResultSubmission {
+  id: string;
   courseId: string;
-  status: "enrolled" | "completed" | "withdrawn";
-  grade?: string;
+  courseCode: string;
+  courseTitle: string;
+  departmentId: string;
+  departmentName: string;
+  lecturerName: string;
+  sessionName: string;
+  semester: SemesterName;
+  studentCount: number;
+  status: ResultStatus;
+  submittedAt: string | null;
+  feedback?: string;
+  audit: AuditEntry[];
 }
 
-export interface Announcement {
+export interface GradeBand {
+  min: number;
+  max: number;
+  grade: string;
+  point: number;
+}
+
+export interface GradingScale {
+  caMax: number;
+  examMax: number;
+  bands: GradeBand[];
+  gpaFormula: string;
+}
+
+// ---------- Administration ----------
+
+export interface RolePermission {
+  role: UserRole;
+  label: string;
+  description: string;
+  userCount: number;
+  permissions: string[];
+}
+
+export interface AuditLog {
   id: string;
-  title: string;
-  body: string;
-  author: string;
-  publishedAt: string;
-  audience: "all" | UserRole;
+  timestamp: string;
+  userName: string;
+  role: UserRole;
+  action: string;
+  entity: string;
+  details: string;
+  ip: string;
 }
 
-export interface PortalEvent {
-  id: string;
-  title: string;
-  startsAt: string;
-  endsAt: string;
-  location: string;
-  category: "academic" | "campus" | "deadline";
-}
-
-export interface DashboardSummary {
+export interface AdminDashboard {
   totalStudents: number;
-  totalFaculty: number;
-  activeCourses: number;
-  totalEnrollments: number;
-  announcements: Announcement[];
-  upcomingEvents: PortalEvent[];
+  totalLecturers: number;
+  totalFaculties: number;
+  totalDepartments: number;
+  activePrograms: number;
+  pendingSubmissions: number;
+  currentSession: string;
+  currentSemester: SemesterName;
 }
