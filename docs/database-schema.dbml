@@ -1,0 +1,161 @@
+// UEMP database schema (mirrors backend/database/migrations).
+// Paste this file into https://dbdiagram.io/d to see the ER diagram, then export PNG/PDF for docs/ (task T4.1).
+
+Enum user_role { student lecturer dept_admin super_admin }
+Enum user_status { active inactive suspended }
+Enum semester_name { First Second }
+Enum course_type { core elective }
+Enum result_status { draft submitted approved rejected reopened }
+
+Table users {
+  id bigint [pk, increment]
+  name varchar
+  email varchar [unique]
+  password varchar [note: 'hashed']
+  role user_role [default: 'student']
+  status user_status [default: 'active']
+  department_id bigint [ref: > departments.id, note: 'only set for dept_admin (their scope)']
+  last_active_at timestamp
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table faculties {
+  id bigint [pk, increment]
+  name varchar [unique]
+  code varchar(10) [unique]
+  dean varchar
+}
+
+Table departments {
+  id bigint [pk, increment]
+  faculty_id bigint [not null, ref: > faculties.id]
+  name varchar
+  code varchar(10) [unique]
+  head varchar
+  indexes { (faculty_id, name) [unique] }
+}
+
+Table programs {
+  id bigint [pk, increment]
+  department_id bigint [not null, ref: > departments.id]
+  name varchar
+  award varchar(20)
+  duration_years tinyint
+  indexes { (department_id, name) [unique] }
+}
+
+Table academic_sessions {
+  id bigint [pk, increment]
+  name varchar(20) [unique, note: 'e.g. 2026/2027']
+  start_date date
+  end_date date
+  is_current boolean [note: 'partial unique index: only one TRUE row']
+}
+
+Table semesters {
+  id bigint [pk, increment]
+  academic_session_id bigint [not null, ref: > academic_sessions.id]
+  name semester_name
+  start_date date
+  end_date date
+  is_current boolean [note: 'partial unique index: only one TRUE row']
+  indexes { (academic_session_id, name) [unique] }
+}
+
+Table students {
+  id bigint [pk, increment]
+  user_id bigint [unique, not null, ref: - users.id]
+  matric_no varchar(30) [unique]
+  department_id bigint [not null, ref: > departments.id]
+  program_id bigint [not null, ref: > programs.id]
+  level smallint
+  graduated_at timestamp
+  phone varchar(30)
+  address text
+  date_of_birth date
+}
+
+Table lecturers {
+  id bigint [pk, increment]
+  user_id bigint [unique, not null, ref: - users.id]
+  department_id bigint [not null, ref: > departments.id]
+  staff_id varchar(30) [unique]
+  specialization varchar
+  phone varchar(30)
+}
+
+Table courses {
+  id bigint [pk, increment]
+  code varchar(12) [unique]
+  title varchar
+  units tinyint
+  level smallint
+  semester semester_name
+  type course_type
+  department_id bigint [not null, ref: > departments.id]
+  program_id bigint [not null, ref: > programs.id]
+}
+
+Table course_assignments {
+  id bigint [pk, increment]
+  course_id bigint [not null, ref: > courses.id]
+  lecturer_id bigint [not null, ref: > lecturers.id]
+  academic_session_id bigint [not null, ref: > academic_sessions.id]
+  indexes { (course_id, academic_session_id) [unique] }
+}
+
+Table registrations {
+  id bigint [pk, increment]
+  student_id bigint [not null, ref: > students.id]
+  semester_id bigint [not null, ref: > semesters.id]
+  registered_at timestamp
+  indexes { (student_id, semester_id) [unique] }
+}
+
+Table registration_items {
+  id bigint [pk, increment]
+  registration_id bigint [not null, ref: > registrations.id]
+  course_id bigint [not null, ref: > courses.id]
+  indexes { (registration_id, course_id) [unique, note: 'prevents duplicate course registration'] }
+}
+
+Table result_submissions {
+  id bigint [pk, increment]
+  course_id bigint [not null, ref: > courses.id]
+  semester_id bigint [not null, ref: > semesters.id]
+  lecturer_id bigint [not null, ref: > lecturers.id]
+  status result_status [default: 'draft']
+  feedback text
+  submitted_at timestamp
+  reviewed_by bigint [ref: > users.id]
+  reviewed_at timestamp
+  indexes { (course_id, semester_id) [unique] }
+}
+
+Table results {
+  id bigint [pk, increment]
+  result_submission_id bigint [not null, ref: > result_submissions.id]
+  student_id bigint [not null, ref: > students.id]
+  ca_score decimal(5,2)
+  exam_score decimal(5,2)
+  total_score decimal(5,2)
+  grade varchar(2)
+  grade_point decimal(3,1)
+  indexes { (result_submission_id, student_id) [unique] }
+}
+
+Table audit_logs {
+  id bigint [pk, increment]
+  user_id bigint [ref: > users.id]
+  user_name varchar
+  role varchar(20)
+  action varchar(50)
+  entity varchar
+  details text
+  ip varchar(45)
+  auditable_type varchar [note: 'e.g. App\\Models\\ResultSubmission']
+  auditable_id bigint
+  metadata json
+  created_at timestamp [note: 'append-only table']
+}

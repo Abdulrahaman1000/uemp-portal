@@ -1,4 +1,4 @@
-# UEMP Assessment — Handover (v8, Mon 9 Nov 2026, late evening)
+# UEMP Assessment — Handover (v11, Tue 10 Nov 2026, morning)
 
 Paste this whole file into a new chat to continue without losing context. Claude cannot push to GitHub from chat. The user runs all git commands and pastes the output back.
 
@@ -32,106 +32,86 @@ Paste this whole file into a new chat to continue without losing context. Claude
 - **Package manager: npm.** `pnpm-lock.yaml` was deleted; `package-lock.json` is the only lockfile.
 - **GitHub repo:** https://github.com/Abdulrahaman1000/uemp-portal (owner Abdulrahaman1000). Push after EVERY task.
 - Do NOT run `npm audit fix --force` (4 moderate warnings are ignored for now).
+- **NEW (Mon 23:15) — backend first.** Student, lecturer and dept admin screens (T1.2-T1.4) are NOT built against the mock any more. Laravel is built next, and those three role frontends are built straight against the real API, so nothing is written twice. The mock stays only so the finished Super Admin screens keep working until the API is connected (T3.1).
+- **NEW — API JSON must be camelCase** to match `frontend/client/types/portal.ts` (e.g. `facultyId`, `durationYears`, `totalUnits`, `matricNo`). Laravel is snake_case by default, so every response goes through Laravel API Resources that output camelCase. Lists return `{data, meta:{current_page,last_page,total}}` (Laravel resource collections already give this meta). Errors: `{message, errors?}`; 422 for validation, 401 unauthenticated, 403 forbidden.
+  - **Exceptions found in `portal.ts` (must be matched exactly):** the `User` object uses snake_case `department_id` and `department_name` (plus camelCase `studentId`, `avatarUrl`, `lastActive`), and `PageMeta` is snake_case (`current_page`, `last_page`, `total`). Everything else is camelCase.
+  - **All ids are strings** in the frontend types (e.g. "f-sci", "s-1001"). Laravel integer ids must be cast to string in the API Resources. The mock search param is `q` (and `per_page`, `page`); the backend should accept both `q` and `search`, plus `per_page` (default 100 in the mock).
+  - **Laravel routes live under `/api`**, so in production `VITE_API_URL` must end with `/api` (paths such as `/login`, `/admin/faculties` are then appended).
+  - `/login` returns `{token, user}` (`AuthSession`); `/me` returns the `User`.
+- **NEW — backend design sketch:** one `users` table with a `role` column (student|lecturer|dept_admin|super_admin), `status` (active|inactive|suspended) and nullable `department_id`; `students` and `lecturers` tables linked 1:1 to users (matric_no, program_id, level, etc.). Department scoping is enforced in a reusable global scope or policy, never only in controllers. Result lifecycle lives in `result_submissions` (status draft|submitted|approved|rejected|reopened, feedback) with per-student scores in `results`. A single `AuditLogger` service writes `audit_logs` for every submission, approval, rejection, reopen, registration and admin change. Grading scale lives in `config/grading.php`.
 - **Data model for the frontend (decided in T1.1, mirrors the Laravel schema):**
   - Removed template types: `Announcement`, `PortalEvent`, `Enrollment`, `DashboardSummary`, old `Faculty` (was a lecturer type).
   - New in `portal.ts`: `Paginated<T>`, `Faculty` (code, dean), `Department` (faculty, head), `Program` (award, duration), `AcademicSession` with nested `Semester[]` (one current), `Student` (matricNo, department, faculty, program, level), `Lecturer`, `Course` (units, level, semester First/Second, type core/elective, lecturer nullable), `RegistrationRecord` (courses, totalUnits), `ResultSubmission` (status draft/submitted/approved/rejected/reopened, feedback, audit trail), `AuditEntry`, `AuditLog`, `GradingScale`, `RolePermission`, `AdminDashboard`.
-  - Seed data in `mock.ts`: 2 faculties (Science, Social Sciences), 3 departments (CSC, MTH, ECO), 4 programs, sessions 2026/2027 (current, First semester current) and 2025/2026, 6 students (matric like CSC/2023/001), 3 lecturers, 8 courses, 3 registrations, 5 result submissions (one per status), 8 audit log rows.
+  - Seed data in `mock.ts`: 2 faculties (Science, Social Sciences), 3 departments (CSC, MTH, ECO), 4 programs, sessions 2026/2027 (current, First semester current) and 2025/2026, 6 students (matric like CSC/2023/001), 3 lecturers, 8 courses, 3 registrations, 5 result submissions (one per status), 8 audit log rows. Laravel seeders should mirror this.
 
-## 5. Current state (Mon 9 Nov, ~17:30)
+- **NEW (Tue 10 Nov) — database design (T2.2, in `backend/database/migrations`, models in `backend/app/Models`, enums in `backend/app/Enums`, diagram source in `docs/database-schema.dbml`):**
+  - Tables: users (+role, status, department_id, last_active_at), faculties, departments, programs, academic_sessions, semesters, students, lecturers, courses, course_assignments, registrations, registration_items, result_submissions, results, audit_logs (+ Laravel's own personal_access_tokens, cache, jobs, sessions, password_reset_tokens). Migration files are dated `2026_11_10_1000xx` so they run after Laravel's defaults and in dependency order.
+  - The default users migration is NOT edited; a separate migration adds the extra columns to `users`.
+  - `users.department_id` is set ONLY for dept admins (their scope). Students and lecturers keep their department on their own profile row (`students.department_id`, `lecturers.department_id`). `User::resolveDepartmentId()` returns the right one for any role. The API `User` object (`department_id`, `department_name`) must use it.
+  - Student `status` is not stored: it is `graduated` if `students.graduated_at` is set, otherwise `users.status` (active/inactive/suspended). One source of truth.
+  - One `registrations` row per student per semester (unique), with the courses as `registration_items` (unique per registration+course). Adding more courses later = adding items to the same registration. Duplicate course registration is therefore impossible at database level; the API must still return a friendly 422.
+  - One `course_assignments` row per course per ACADEMIC SESSION (unique). The Course resource's `lecturerId/lecturerName` come from the assignment in the CURRENT session (null if none).
+  - One `result_submissions` row per course per semester (unique) holds the workflow status, feedback, reviewer; `results` holds per-student scores. `ResultStatus` enum encodes the rules: lecturer can edit only draft/rejected/reopened; only submitted can be approved or rejected; students see only approved.
+  - `audit_logs` is append-only (model throws on update/delete), stores user name and role as a snapshot, and links to the affected record with a polymorphic `auditable_type/auditable_id` (full class names, e.g. `App\Models\ResultSubmission`). The per-submission audit timeline in the frontend (`AuditEntry`) is built from these rows.
+  - Database-level guards: partial unique indexes allow only ONE current academic session and ONE current semester. Code that switches the current session must, inside a DB transaction, first set the old row to false and then the new row to true.
+  - Foreign keys use `restrictOnDelete` for academic records (faculty, department, program, course, student, lecturer, semester). Deleting a parent that still has children raises a database error: controllers must check first and return a clear 422 message ("Cannot delete: it still has departments").
+  - IDs are bigint in the database. API Resources cast them to strings (frontend ids are strings).
+  - Grading limits (CA 30, exam 70) are NOT database checks because the scale is configurable (`config/grading.php`, T2.7); they are validated in the app.
+
+## 5. Current state (Tue 10 Nov, morning)
 - Local folder: `C:\Users\Systems Technologies\Downloads\university-education-portal` (Windows, PowerShell). It is the monorepo root.
-- GitHub repo https://github.com/Abdulrahaman1000/uemp-portal is live on `main` with `frontend/` (Vite React app), `backend/` (empty, .gitkeep), `docs/` (empty, .gitkeep), root `README.md` skeleton. Builder's `AGENTS.md` and `builder.config.json` removed.
-- Builder's Express stub removed. `npx tsc --noEmit` and `npm run build` passed at the end of T0.2 (run from `frontend/`).
+- GitHub repo https://github.com/Abdulrahaman1000/uemp-portal is live on `main` with `frontend/` (Vite React app), `backend/` (Laravel 13 + Sanctum scaffold, T2.1 pushed), `docs/` (empty, .gitkeep), root `README.md` skeleton.
+- **T1.1 is committed and pushed**: latest commit `154a098` "feat(frontend): align super admin screens with spec". `git status` clean, branch up to date with origin/main.
+- Builder's Express stub removed. `npx tsc --noEmit` and `npm run build` pass (run from `frontend/`).
 - Run frontend commands from `frontend/` (`cd frontend`, then `npm run dev`). Vite v8.3.7; `@vitejs/plugin-react-swc` installed. Close old dev servers on ports 8080-8083.
-- Commits pushed so far: initial cleanup, `2b2ab58` restructure, `729d3c5`, `7c46e1b` (stop tracking .env).
-- `.env` is untracked and ignored. App reads only `VITE_API_URL` (empty = mock) and `VITE_USE_MOCK` (true/false). Pending confirmation: user ran the commands that write `frontend/.env` and `frontend/.env.example` and pushed `chore(frontend): clean env example`.
+- `.env` is untracked and ignored. App reads only `VITE_API_URL` (empty = mock) and `VITE_USE_MOCK` (true/false).
 - Mock mode demo logins: superadmin@, deptadmin@, lecturer@, student@ northstar.edu, password demo123.
-- **T1.1 IN PROGRESS.**
-  - DONE (delivered as files, user has `portal.ts` in place): new `frontend/client/types/portal.ts`.
-  - DONE (applied): new `frontend/client/lib/mock.ts` (full replacement). It implements `/admin/*` routes: dashboard, grading-scale, roles, students, lecturers, registrations, submissions (`?status=`), activity-logs (`?user= &action= &from= &to=`), reports/{registrations|results|students}, sessions/{id}/activate, semesters/{id}/activate, users (list, PATCH status, PATCH role), and generic GET/POST/PUT/DELETE for faculties, departments, programs, courses, sessions. Non-admin roles get 403 on `/admin/*`. Student/lecturer/dept routes return 404 until T1.2-T1.4. Mutations are logged to the audit log.
-  - DONE (applied, `npx tsc --noEmit` clean): cleaned `lib/api.ts`. Reads only `VITE_API_URL` / `VITE_USE_MOCK`, session key `uemp.session`, exports `api`, `apiRequest`, `ApiError` (`isUnauthorized`, `isForbidden`, `isValidation`, `fieldErrors`), `USE_MOCK`, `toQuery`, `ListParams`. Typed helpers: `api.login/logout/me` and `api.admin.{dashboard, gradingScale, roles, list(resource, params), create, update, remove, activateSession, activateSemester, users, setUserStatus, setUserRole, students, lecturers, registrations, submissions, activityLogs, report(type)}`. `AdminResource` = faculties | departments | programs | courses | sessions. Lists return `Paginated<T>` = `{data, meta}`.
-  - BATCH 1 of T1.1d DELIVERED as a zip (`uemp-update-2.zip`, user installs it with PowerShell, see section 10). Contents:
-    - `components/admin/ui.tsx`: `AdminPage`, `PageHeader`, `StatusBadge`, `Initials`, `StatCard`, `LoadingBlock`, `ErrorState` (shows a forbidden message on 403), `SearchInput`, `Notice`, `Modal`, `formatDate`, `inputClass/buttonClass/primaryClass`.
-    - `components/admin/DataTable.tsx`: generic `DataTable<T>` with `columns`, loading rows, empty state, `toolbar`/`action` slots, optional server-side pagination (`page`, `lastPage`, `total`, `onPageChange`).
-    - `hooks/useAsyncData.ts`: `useAsyncData(loader, deps)` returns `{data, loading, error, reload}`; `useDebouncedValue`.
-    - `pages/admin/index.tsx`: section router. Super admin sections that are migrated render the new page; everything else (and the whole department admin role) still falls back to the legacy `components/AdminScreens.tsx`. To migrate a section, add a `case` in the switch. `pages/admin/sections.ts` re-exports `AdminSection`.
-    - `pages/admin/Overview.tsx`: super admin dashboard from `api.admin.dashboard()`, registrations and submissions. Fake enrollment chart and faculty donut removed (no data in the contract).
-  - APP SHELL CLEANUP (same zip), fixes section 6 item 8 and part of T1.5:
-    - `App.tsx` is now only providers and routes. It was split into `lib/navigation.ts` (menus, `rolePath`, `roleName`), `pages/Login.tsx`, `components/layout/DashboardShell.tsx`.
-    - Removed the unauthenticated "demo mode" routes that showed the Super Admin dashboard at `/` and `/:section`. `/` now redirects to the user's dashboard or `/login`. Unknown URLs render `pages/NotFound.tsx` (assumes it has a default export; if `tsc` complains, fix the import in `App.tsx`).
-    - Header no longer hard-codes "2024 / 2025 · First semester", "Sign in" or the sidebar approvals badge "3". It shows the real signed-in user and role.
-    - Login shows the demo credentials panel only when `USE_MOCK` is true.
-  - BATCH 2 of T1.1d DELIVERED as a zip (`uemp-update-3.zip`). Type-checked in a sandbox against the real `portal.ts` types and `api.admin` signatures. Not yet run in the user's browser. Contents:
-    - `components/admin/CrudPage.tsx`: generic list page (search, pagination, add, edit, delete, 422 field errors, toasts via `sonner`) driven by `resource`, `columns` and `fields` (`FieldDef`: key, label, type text|number|select, required, options). New CRUD pages are only a config file.
-    - `components/admin/ui.tsx` extended: `Field`, `ConfirmDialog`, `dangerClass`, `errorMessage`.
-    - Pages wired in `pages/admin/index.tsx` for the super admin: `Faculties`, `Departments` (faculty select), `Programs` (department select, duration), `Sessions` (sessions with nested semesters, "Set as current" with confirmation, add session; semesters can only be made current inside the current session), `Users` (search, role and status filters, Manage dialog to change role among the four roles and status; own account locked), `Roles` (role cards, read-only permission matrix, read-only grading scale panel).
-    - Assumption to verify: list endpoints accept `page`, `search`, `per_page`, and users also `role` and `status`. The pages also filter the loaded page client-side, so the mock works even if it ignores them. Create/update bodies use the same field names as the `portal.ts` types (e.g. `facultyId`, `departmentId`, `durationYears`, `startDate`, `endDate`).
-  - BATCH 3 of T1.1d DELIVERED as a zip (`uemp-update-4.zip`). Type-checked in a sandbox against the real `portal.ts` types and `api.admin` signatures (strict, no unused locals). Not yet run in the user's browser. Completes all 12 super admin sections. Contents:
-    - `pages/admin/Courses.tsx` (CrudPage; code, title, units, level select, semester First/Second, type core/elective, department, program, optional lecturer allocation; "Unassigned" shown in amber), `Registrations.tsx` (read-only, search and level filter, "View courses" dialog with units), `Oversight.tsx` (submissions with status filter, "Audit trail" dialog with feedback and timeline; no approve action, that belongs to the dept admin), `Reports.tsx` (tabs students/registrations/results from `api.admin.report(type)`, bar list, Export CSV), `ActivityLog.tsx` (filters user, action, from, to; columns timestamp, user, role, action, entity, details, IP).
-    - `lib/csv.ts`: `downloadCsv(filename, rows)`; cells starting with `= + - @` are prefixed to prevent spreadsheet formula injection.
-    - `components/admin/CrudPage.tsx`: `FieldDef.numeric` (send a select value as a number, used for level); empty optional selects/text are sent as `null` (used for lecturer unassign).
-    - `components/admin/ui.tsx`: added `formatDateTime`.
-    - `pages/admin/index.tsx`: now routes all 12 super admin sections. The department admin role still falls back to the legacy `AdminScreens.tsx`.
-  - Still open for T1.1: the user must run all three batches in the browser (T1.1e), then commit and push. Fix any list-param mismatches with the mock (pages also filter client-side, so mock gaps should not break the demo). Legacy `components/AdminScreens.tsx` stays until T1.4 replaces the dept admin screens, then delete it and `pages/admin/sections.ts` should hold the real `AdminSection` union.
-  - Known open points: VS Code showed `⊗ 1` in the status bar while `tsc` was clean (user to click it and report the file); `RoleScreens.tsx` is untouched and still hard-coded.
+- **Super Admin frontend (T1.1) is complete**, all 12 sections, working in mock mode:
+  - Files: `types/portal.ts`, `lib/mock.ts`, `lib/api.ts` (reads only `VITE_API_URL` / `VITE_USE_MOCK`, session key `uemp.session`, exports `api`, `apiRequest`, `ApiError` with `isUnauthorized/isForbidden/isValidation/fieldErrors`, `USE_MOCK`, `toQuery`, `ListParams`; helpers `api.login/logout/me` and `api.admin.{dashboard, gradingScale, roles, list(resource, params), create, update, remove, activateSession, activateSemester, users, setUserStatus, setUserRole, students, lecturers, registrations, submissions, activityLogs, report(type)}`; `AdminResource` = faculties | departments | programs | courses | sessions).
+  - Reusable pieces to reuse for the other roles: `components/admin/ui.tsx` (`AdminPage`, `PageHeader`, `StatusBadge`, `Initials`, `StatCard`, `LoadingBlock`, `ErrorState`, `SearchInput`, `Notice`, `Modal`, `Field`, `ConfirmDialog`, `formatDate`, `formatDateTime`, class helpers), `components/admin/DataTable.tsx` (generic, optional server pagination), `components/admin/CrudPage.tsx` (config-driven CRUD with 422 field errors and `sonner` toasts), `hooks/useAsyncData.ts`, `lib/csv.ts` (`downloadCsv`, formula-injection safe), `lib/navigation.ts` (menus, `rolePath`, `roleName`), `components/layout/DashboardShell.tsx`, `pages/Login.tsx`, `pages/NotFound.tsx`.
+  - `pages/admin/index.tsx` routes all 12 super admin sections (Overview, Faculties, Departments, Programs, Sessions, Users, Roles, Courses, Registrations, Oversight, Reports, ActivityLog). The department admin role still falls back to the legacy `components/AdminScreens.tsx`, which must be deleted when T1.4 is done (then `pages/admin/sections.ts` should hold the real `AdminSection` union).
+  - `App.tsx` is providers and routes only. `/` redirects to the user's dashboard or `/login`. Unknown URLs render NotFound.
+- Known open points: VS Code showed `⊗ 1` in the status bar while `tsc` was clean (user to click it and report the file); `components/RoleScreens.tsx` is untouched and still hard-coded (student, lecturer).
 - Terminal tip: always start with `cd "C:\Users\Systems Technologies\Downloads\university-education-portal"`. Run frontend commands from `frontend/`.
-- Only the Super Admin screens were reviewed. (Student/lecturer/dept admin still unverified.) Student, lecturer and dept admin screens NOT yet verified (likely in `frontend/client/components/RoleScreens.tsx`).
-- `AdminScreens.tsx` (original, ~300 lines of dense code): one generic `sections` table config with hard-coded rows (Olivia Martin, 2024/2025, "Faculty admin", "Alex Morgan" greeting), shared by both admin roles via `role` prop `department | super-admin`. It must be replaced, not patched.
+- The user already copied `frontend/client/lib/mock.ts` to the clipboard (`Get-Content client\lib\mock.ts | Set-Clipboard`) so it can be pasted into the next message. Claude also needs `frontend/client/types/portal.ts` pasted, so the Laravel API Resources match the JSON exactly.
 
-## 6. Frontend gaps found (fix before wiring the API)
-1. Generic template on every admin page ("Active / completed", "Needs attention" cards; "Add X" buttons that don't fit).
-2. **Result Oversight** shows enrollment verification / accreditation rows. Must be result submissions: course, department, lecturer, status (submitted/approved/rejected/reopened), date, audit trail. Remove "Add review".
-3. **"Faculty admin" role** appears in Users and Roles. Remove. Roles page should be a read-only permission matrix for the four roles plus change-user-role. Remove "Add role".
-4. **Registrations**: remove "Add registration" and the Approved/Pending registration status. Admins only view. Show student, matric no, level, courses, units, semester.
-5. **Courses**: need course code, title, units (not "credit hours"), level, semester (First/Second, not "Fall 2024"), type core/elective, department, lecturer. Remove the Draft status.
-6. **Sessions & semesters**: separate semesters under each session, "Set as current" action, only one active. Fix avatar showing "2/".
-7. **Activity log**: columns timestamp, user, role, action, entity, details/IP; filters by user, action, date range.
-8. Header says "Sign in" and the greeting says "Alex" while the user shows "Morgan Ellis". Make consistent; show real logged-in user and role badge.
-9. Programs subtitle says "across the department" on the super admin view. Faculty avatars all show "Fo".
-10. Grading scale not visible anywhere. Add a read-only grading scale panel (or super admin setting).
-11. Large files (AdminScreens.tsx, RoleScreens.tsx) hurt the code-quality score. Split per role/page.
-12. Env vars: Vite uses `VITE_` prefix, not `NEXT_PUBLIC_`. Check `.env` and `lib/api.ts` for the API base URL and mock flag.
+## 6. Frontend gaps found
+Resolved for the Super Admin in T1.1: former items 1-10 and 12 (generic template, Result Oversight, "Faculty admin" role, Registrations, Courses, Sessions and semesters, Activity log, header, grading scale panel, env vars).
+Still open: split/replace `RoleScreens.tsx` (student, lecturer) and `AdminScreens.tsx` (dept admin) per page (T1.2-T1.4), responsive check, print views (T1.5).
 
 ## 7. API contract (frontend expects; backend must match)
 Auth: POST /login, POST /logout, GET /me
 Student: GET/PUT /student/profile, GET /student/available-courses, POST /student/registrations, GET /student/registrations, GET /student/results, GET /student/academic-history
 Lecturer: GET /lecturer/dashboard, GET /lecturer/courses, GET /lecturer/courses/{id}/students, PUT /lecturer/courses/{id}/results, POST /lecturer/courses/{id}/results/submit, GET /lecturer/courses/{id}/summary, GET /lecturer/submissions
 Dept: GET /dept/dashboard; CRUD /dept/students, lecturers, courses, levels, programs; POST /dept/courses/{id}/assign; GET /dept/registrations; GET /dept/submissions, GET /dept/submissions/{id}, POST approve|reject|reopen; GET /dept/reports/{type}
-Admin: GET /admin/dashboard; CRUD /admin/faculties, departments, programs, sessions, semesters, users, courses; POST /admin/sessions/{id}/activate (also POST /admin/semesters/{id}/activate); PATCH /admin/users/{id}/status; PATCH /admin/users/{id}/role; GET /admin/registrations, submissions, reports/{type}, activity-logs; GET /admin/roles, GET /admin/grading-scale, GET /admin/students, GET /admin/lecturers
-Lists return {data, meta:{current_page,last_page,total}}. Errors: {message, errors?}. 401 -> redirect to login, 403 -> forbidden page, 422 -> field errors.
-(Added in T1.1: /admin/roles, /admin/grading-scale, /admin/students, /admin/lecturers, semesters activate. Backend must implement them.)
+Admin: GET /admin/dashboard; CRUD /admin/faculties, departments, programs, sessions, semesters, users, courses; POST /admin/sessions/{id}/activate (also POST /admin/semesters/{id}/activate); PATCH /admin/users/{id}/status; PATCH /admin/users/{id}/role; GET /admin/registrations, submissions (`?status=`), reports/{type} (students|registrations|results), activity-logs (`?user= &action= &from= &to=`); GET /admin/roles, GET /admin/grading-scale, GET /admin/students, GET /admin/lecturers
+Lists return {data, meta:{current_page,last_page,total}} and accept `page`, `search`, `per_page` (users also `role`, `status`). Errors: {message, errors?}. 401 -> redirect to login, 403 -> forbidden page, 422 -> field errors.
+Create/update bodies use the same camelCase field names as `portal.ts` (e.g. `facultyId`, `departmentId`, `durationYears`, `startDate`, `endDate`). The exact request/response shapes are in `frontend/client/lib/mock.ts` and `portal.ts`; the Laravel API must match them.
 
-## 8. Plan
-- **Mon 9 / early Tue 10 Nov:** repo and frontend cleanup, review and fix frontend in mock mode; confirm all four roles render.
-- **Tue 10 Nov:** Laravel API: migrations, auth and roles, dept scoping, registration rules, result flow and grading service, audit log, seeders. Deploy API and connect Neon early.
-- **Wed 11 Nov:** switch mock off, wire the frontend, test every workflow end to end, deploy to Vercel.
+## 8. Plan (revised)
+- **Mon night / Tue 10 Nov:** Laravel backend: scaffold + Neon, migrations, seeders, auth and RBAC, then super admin, dept admin, lecturer and student APIs, tests. Deploy API early.
+- **Wed 11 Nov:** build the student, lecturer and dept admin frontends against the real API (T1.2-T1.4), connect the Super Admin screens (T3.1), end-to-end testing, deploy to Vercel.
 - **Thu 12 Nov:** README, ER diagram (dbdiagram.io), architecture/security doc, credentials list, 3-5 min demo video. Submit well before 11:55 PM.
 - Cut if short on time: fancy charts, pagination, extra report types. Never cut: backend permission checks, dept scoping, registration rules, approval flow, audit logs.
 
 ## 9. Master task list (push to GitHub after EVERY task)
-Repo layout target: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (Laravel), `docs/` (ER diagram, technical doc), root `README.md`. Never commit `.env`.
+Repo layout: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (Laravel), `docs/` (ER diagram, technical doc), root `README.md`. Never commit `.env`.
 
 **Phase 0: Repo**
-- [x] T0.1 GitHub repo created and pushed.
-- [x] T0.2a Express stub removed; tsc and build clean.
-- [x] T0.2b Monorepo restructure done and pushed (`2b2ab58`). `.env` follow-up done.
+- [x] T0.1, T0.2a, T0.2b done and pushed.
 
-**Phase 1: Frontend fixes in mock mode**
-- [ ] T1.1 Super Admin fixes (section 6 items 1-10). Commit: `feat(frontend): align super admin screens with spec`.
-  - [x] T1.1a New `types/portal.ts`
-  - [x] T1.1b New `lib/mock.ts` (applied)
-  - [x] T1.1c Clean `lib/api.ts` (VITE_ env, `uemp.session`, remove old types); tsc clean
-  - [x] T1.1d All 12 super admin pages delivered (batch 1: shared ui, DataTable, hook, router, Overview, shell split. Batch 2: Faculties, Departments, Programs, Sessions, Users, Roles + grading scale. Batch 3: Courses, Registrations, Result oversight, Reports, Activity log) Split AdminScreens into `pages/admin/*` (shared layout/shell, DataTable, StatusBadge; one page per resource: Overview, Faculties, Departments, Programs, Courses, Registrations, Sessions, Users, Roles, Results oversight, Reports, Activity log + grading scale panel)
-  - [ ] T1.1e tsc, build, browser check, commit and push
-- [ ] T1.2 Student: dashboard, profile (limited edit), course registration, my courses, results (approved only), academic history and CGPA, print registration summary and result statement. Commit: `feat(frontend): student portal`.
-- [ ] T1.3 Lecturer: dashboard, assigned courses, class list, result entry grid (draft/submit/lock, rejection feedback), submissions, course summary. Commit: `feat(frontend): lecturer portal`.
-- [ ] T1.4 Dept Admin: students, lecturers, courses, assignments, levels/programs, registrations, result approvals (approve/reject with feedback/return/reopen), reports. Commit: `feat(frontend): department admin portal`.
-- [ ] T1.5 RoleGuard, 401/403/422 handling, responsive check, split big files, VITE_ env config. (Partly done: App.tsx split, demo routes removed, api.ts handles 401/403/422, ErrorState handles 403.) Commit: `refactor(frontend): guards, errors, structure`.
+**Phase 1: Frontend**
+- [x] T1.1 Super Admin screens, DONE and pushed (`154a098`).
+- [ ] T1.2 Student portal (now built against the REAL API, after the backend). Dashboard, profile (limited edit), course registration, my courses, results (approved only), academic history and CGPA, print registration summary and result statement. Commit: `feat(frontend): student portal`.
+- [ ] T1.3 Lecturer portal (against the real API). Dashboard, assigned courses, class list, result entry grid (draft/submit/lock, rejection feedback), submissions, course summary. Commit: `feat(frontend): lecturer portal`.
+- [ ] T1.4 Dept Admin portal (against the real API). Students, lecturers, courses, assignments, levels/programs, registrations, result approvals (approve/reject with required feedback/return/reopen), reports; delete legacy `AdminScreens.tsx`. Commit: `feat(frontend): department admin portal`.
+- [ ] T1.5 RoleGuard, 401/403/422 handling (mostly done), responsive check, remove `RoleScreens.tsx`, print views. Commit: `refactor(frontend): guards, errors, structure`.
 
-**Phase 2: Laravel backend**
-- [ ] T2.1 Laravel scaffold, Neon pgsql, Sanctum bearer, CORS. Commit: `feat(backend): scaffold, sanctum, neon`.
-- [ ] T2.2 Migrations and models for every table (users, faculties, departments, programs, levels, academic_sessions, semesters, courses, students, lecturers, course_assignments, registrations, results, result_submissions, audit_logs). Commit: `feat(backend): schema and models`.
-- [ ] T2.3 Seeders: 1 super admin, 2 faculties, 3 departments, dept admins, lecturers, ~10 students, courses, registrations and results in every status. Commit: `feat(backend): seed data`.
-- [ ] T2.4 Auth endpoints, role middleware, department scoping, AuditLogger service. Commit: `feat(backend): auth, rbac, audit`.
+**Phase 2: Laravel backend (NEXT)**
+- [x] T2.1 (DONE, pushed) Laravel scaffold in `backend/`, Neon pgsql, Sanctum (`php artisan install:api`), CORS. Commit: `feat(backend): scaffold, sanctum, neon`.
+- [ ] T2.2 IN PROGRESS (zip delivered Tue 10 Nov; waiting for the user to run `php artisan migrate` on Neon and push): migrations, models, enums, `.env.example`, `docs/database-schema.dbml`. Commit: `feat(backend): schema and models`.
+- [ ] T2.3 Seeders mirroring the mock data (1 super admin, 2 faculties, 3 departments, dept admins, lecturers, students, courses, registrations and results in every status). Commit: `feat(backend): seed data`.
+- [ ] T2.4 Auth endpoints, role middleware, department scoping, AuditLogger service, camelCase API Resources. Commit: `feat(backend): auth, rbac, audit`.
 - [ ] T2.5 Super Admin APIs. Commit: `feat(backend): super admin api`.
 - [ ] T2.6 Dept Admin APIs incl. approve/reject/reopen. Commit: `feat(backend): dept admin api`.
 - [ ] T2.7 Lecturer APIs and GradingService (configurable scale, credit-weighted GPA). Commit: `feat(backend): lecturer api and grading`.
@@ -140,7 +120,7 @@ Repo layout target: monorepo `uemp-portal/` with `frontend/` (Vite React), `back
 - [ ] T2.10 Deploy API (Railway or Render), run migrate --seed against Neon. Commit: `chore(backend): deployment config`.
 
 **Phase 3: Integration and deploy**
-- [ ] T3.1 Switch frontend from mock to API, role by role. Commit: `feat: connect frontend to api`.
+- [ ] T3.1 Switch frontend from mock to API. Commit: `feat: connect frontend to api`.
 - [ ] T3.2 Test all 4 workflows and the 10 acceptance criteria; try forbidden endpoints with wrong roles. Commit: `fix: integration bugs`.
 - [ ] T3.3 Deploy frontend to Vercel (SPA rewrite, VITE_API_URL). Commit: `chore(frontend): vercel config`.
 
@@ -158,19 +138,39 @@ Live app URL | login URL + credentials per role | GitHub repo | technical docs |
 - Always produce a handover file for each piece of work, and keep updating it, so the next chat can pick up immediately.
 - Simple, direct English. Give PowerShell commands one block at a time; never chain `npm run dev` with other commands.
 - Give full replacement files one at a time (files can be delivered as downloads).
-- **Install workflow (new):** Claude delivers each batch as ONE zip (folder layout mirrors `frontend/`, plus `HANDOVER.md` at the zip root). The user downloads it, then Claude gives PowerShell commands that unpack it into the repo. The user must never paste code into files by hand. Standard install block, run from `frontend/` (adjust the zip name; change `$HOME\Downloads` if the browser saves elsewhere):
+- **Install workflow:** Claude delivers each batch as ONE zip (folder layout mirrors the repo, plus `HANDOVER.md` at the zip root). The user downloads it, then Claude gives PowerShell commands that unpack it into the repo. The user must never paste code into files by hand. Frontend install block, run from `frontend/` (adjust the zip name; change `$HOME\Downloads` if the browser saves elsewhere):
   ```
   Expand-Archive -Path "$HOME\Downloads\<zip name>.zip" -DestinationPath .\_update -Force
   Copy-Item .\_update\client\* .\client\ -Recurse -Force
   Copy-Item .\_update\HANDOVER.md ..\HANDOVER.md -Force
   Remove-Item .\_update -Recurse -Force
   ```
-  Then `npx tsc --noEmit`, `npm run dev`. Git shows exactly what changed (`git status`), so no backups are needed.
-- Claude type-checks every batch in a sandbox (strict, noUnusedLocals, stubs for files it cannot see) before delivering.
+  Backend zips unpack into `backend/` the same way. Then `npx tsc --noEmit`, `npm run dev` (frontend) or `php artisan test` (backend). Git shows exactly what changed (`git status`), so no backups are needed.
+- Claude checks every batch in a sandbox (strict type-check for the frontend, PHP lint and tests for the backend where possible) before delivering.
 
 ## 11. Next step when this chat resumes
-1. Confirm `uemp-update-2.zip`, `-3.zip` and `-4.zip` are all installed (in that order). Run `npx tsc --noEmit` and `npm run build` from `frontend/`; then `npm run dev` and click through all 12 super admin pages as superadmin@northstar.edu / demo123 (Overview, Faculties, Departments, Programs, Sessions, Users, Roles, Courses, Registrations, Result oversight, Reports, Activity log). Ask for tsc errors, any page that fails or shows empty data, and what the VS Code `⊗ 1` is. Fix whatever breaks.
-2. When clean, the user commits and pushes: `git add -A`, `git commit -m "feat(frontend): align super admin screens with spec"`, `git push`. Then tick T1.1e and T1.1.
-3. Start T1.2 (student portal) in the same style: `pages/student/*` (Overview, Profile with limited edit, Registration, My courses, Results approved only, Academic history and CGPA, print registration summary and result statement). First extend `mock.ts` and `api.ts` with the `/student/*` routes from section 7 (ask the user to paste `mock.ts` if needed, since this chat has not seen it), then deliver pages as a zip. Reuse `components/admin/*` helpers (consider moving them to `components/ui/` when T1.2 starts) and `useAsyncData`.
-4. Then T1.3 lecturer, T1.4 dept admin (dept scoping, approve/reject with feedback/return/reopen, replaces the legacy `AdminScreens.tsx`), T1.5 cleanup. Update this handover after every batch.
-5. Time check: Backend (Phase 2) must start by Tue afternoon at the latest. Build T1.2-T1.4 simple but complete first, polish later. If frontend time runs short, consider starting the Laravel backend in parallel as soon as T1.2 is verified.
+**T2.2 is delivered; confirm it ran, then start T2.3 (seeders).**
+1. Ask the user whether, from `backend/`, they ran (and what the output was):
+   ```
+   php artisan migrate
+   php artisan migrate:status
+   php artisan db:show --counts | Select-String -NotMatch "URL"
+   ```
+   All 8 new migrations plus Laravel's defaults should show `Ran`, and Neon should list 20+ tables. (They must NOT paste unfiltered `db:show` output: it prints the Neon password.) If a migration fails, fix that first; typical causes are a different filename for the Sanctum migration or an earlier partial run (`php artisan migrate:fresh` is safe now because the database has no real data).
+2. User commits and pushes: `git add -A`, `git status` (check `backend/.env` is NOT listed), `git commit -m "feat(backend): schema and models"`, `git push`.
+3. **T2.3 seeders** (mirror `frontend/client/lib/mock.ts`): 1 super admin (superadmin@northstar.edu / demo123), dept admins (deptadmin@northstar.edu for CSC; second for ECO), 3 lecturers (lecturer@northstar.edu = Dr. Maya Chen), 6 students (student@northstar.edu = Avery Johnson, CSC/2023/001, level 300), 2 faculties, 3 departments, 4 programs, sessions 2026/2027 (current, First semester current) and 2025/2026, 8 courses, assignments for the current session, 3 registrations, 5 result submissions covering draft/submitted/approved/rejected/reopened with scores and audit rows, and a few audit logs. Use one default demo password for every account and list the accounts in the README (T4.3).
+4. Then T2.4 (auth, role middleware, department scoping, AuditLogger, camelCase API Resources, CORS via `CORS_ALLOWED_ORIGINS`), T2.5 to T2.10 as in section 9. Deliver each as one zip with the install block below, then commit and push. Update this handover after every task.
+5. Backend install block (run from `backend/`; the zip has `app/`, `database/`, `docs/` and `HANDOVER.md` at its root; adjust the zip name):
+   ```
+   Expand-Archive -Path "$HOME\Downloads\<zip name>.zip" -DestinationPath .\_update -Force
+   Copy-Item .\_update\app\* .\app\ -Recurse -Force
+   Copy-Item .\_update\database\* .\database\ -Recurse -Force
+   Copy-Item .\_update\docs\* ..\docs\ -Recurse -Force
+   Copy-Item .\_update\.env.example .\.env.example -Force
+   Copy-Item .\_update\HANDOVER.md ..\HANDOVER.md -Force
+   Remove-Item .\_update -Recurse -Force
+   ```
+   (later zips may add `routes/`, `config/`, `tests/`: copy those folders the same way.)
+6. Security note: the Neon password was exposed once in chat via unfiltered `db:show` output. The user was told to reset it. Remind them to confirm the reset was done (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`).
+7. Time check: backend by Tue night, frontend for the three roles and integration on Wed, docs and demo on Thu (deadline Thu 12 Nov, 11:55 PM WAT).
+8. The sandbox Claude uses cannot install Composer packages (packagist is blocked), so PHP code is only lint-checked there (`php -l`); the user's machine is where migrations and tests really run. Ask the user to paste any error output.
