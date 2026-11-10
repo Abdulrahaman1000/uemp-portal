@@ -1,4 +1,4 @@
-# UEMP Assessment — Handover (v11, Tue 10 Nov 2026, morning)
+# UEMP Assessment — Handover (v12, Tue 10 Nov 2026)
 
 Paste this whole file into a new chat to continue without losing context. Claude cannot push to GitHub from chat. The user runs all git commands and pastes the output back.
 
@@ -75,6 +75,14 @@ Paste this whole file into a new chat to continue without losing context. Claude
 - Terminal tip: always start with `cd "C:\Users\Systems Technologies\Downloads\university-education-portal"`. Run frontend commands from `frontend/`.
 - The user already copied `frontend/client/lib/mock.ts` to the clipboard (`Get-Content client\lib\mock.ts | Set-Clipboard`) so it can be pasted into the next message. Claude also needs `frontend/client/types/portal.ts` pasted, so the Laravel API Resources match the JSON exactly.
 
+- **T2.2 is committed and pushed** (`af7f5d3` "feat(backend): schema and models"). Migrations, models, enums and `docs/database-schema.dbml` are on `main`.
+- **T2.3 seeders DELIVERED (zip `uemp-backend-3.zip`), waiting for the user to run and push.** Files in `backend/database/seeders/`: `DatabaseSeeder` (runs everything inside one transaction and prints the demo accounts), `AcademicStructureSeeder`, `UserSeeder`, `CourseSeeder`, `RegistrationSeeder`, `ResultSeeder`, `AuditLogSeeder`, and the helper `DemoSeed` (default password, grade bands). Seeding is re-runnable (records matched by unique keys; audit logs only seed into an empty table). `.env.example` gained an optional `SEED_PASSWORD`.
+  - Seed content: 2 faculties (SCI, SOC), 3 departments (CSC, MTH, ECO), 4 programs, sessions 2025/2026 and 2026/2027 (current, First semester current), 13 users = 1 super admin, 2 dept admins (CSC, ECO), 3 lecturers, 7 students, 10 courses, 9 course assignments, 7 registrations (10 items), 8 result submissions (10 result rows), 13 audit log rows.
+  - **Differences from `mock.ts` (on purpose, for consistent demo data):** a 7th student, Daniel Mensah (CSC/2023/012, level 300, daniel.mensah@northstar.edu), so level-300 classes have 2 students; two extra courses CSC201 and CSC206 plus approved 2025/2026 results for Avery Johnson so academic history and CGPA are not empty; two more current-semester registrations (Daniel, Sofia). Result states: CSC301 submitted, CSC305 approved, CSC202 rejected (with feedback), MTH301 reopened (CA score missing), ECO201 draft (exam score missing), plus 3 approved past results.
+  - Demo accounts, all with password `demo123`: superadmin@northstar.edu, deptadmin@northstar.edu (CSC), h.cooper@northstar.edu (ECO), lecturer@northstar.edu (Dr. Maya Chen), student@northstar.edu (Avery Johnson, CSC/2023/001, level 300). Other seeded accounts can log in too (except that inactive/suspended ones will be refused by the T2.4 login rules): leila.ahmed@, noah.williams@, sofia.martinez@, amina.yusuf@ (inactive), ethan.okafor@ (suspended), daniel.mensah@, daniel.reyes@, priya.shah@ (inactive), all `@northstar.edu`.
+  - Seeder grades use fixed bands in `DemoSeed::grade()` (A 70+, B 60, C 50, D 45, E 40, F). When the `GradingService` (T2.7) exists, call it from `ResultSeeder` instead.
+  - `env('SEED_PASSWORD')` is read with `env()`. If `config:cache` is ever run before seeding, it falls back to `demo123`.
+
 ## 6. Frontend gaps found
 Resolved for the Super Admin in T1.1: former items 1-10 and 12 (generic template, Result Oversight, "Faculty admin" role, Registrations, Courses, Sessions and semesters, Activity log, header, grading scale panel, env vars).
 Still open: split/replace `RoleScreens.tsx` (student, lecturer) and `AdminScreens.tsx` (dept admin) per page (T1.2-T1.4), responsive check, print views (T1.5).
@@ -109,8 +117,8 @@ Repo layout: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (
 
 **Phase 2: Laravel backend (NEXT)**
 - [x] T2.1 (DONE, pushed) Laravel scaffold in `backend/`, Neon pgsql, Sanctum (`php artisan install:api`), CORS. Commit: `feat(backend): scaffold, sanctum, neon`.
-- [ ] T2.2 IN PROGRESS (zip delivered Tue 10 Nov; waiting for the user to run `php artisan migrate` on Neon and push): migrations, models, enums, `.env.example`, `docs/database-schema.dbml`. Commit: `feat(backend): schema and models`.
-- [ ] T2.3 Seeders mirroring the mock data (1 super admin, 2 faculties, 3 departments, dept admins, lecturers, students, courses, registrations and results in every status). Commit: `feat(backend): seed data`.
+- [x] T2.2 DONE, migrated on Neon (DIRECT unpooled host; the pooled host fails) and pushed (`af7f5d3`). Commit: `feat(backend): schema and models`.
+- [x] T2.3 Seeders DELIVERED (`uemp-backend-3.zip`); user to run `php artisan db:seed`, check counts, then commit and push. Commit: `feat(backend): seed data`.
 - [ ] T2.4 Auth endpoints, role middleware, department scoping, AuditLogger service, camelCase API Resources. Commit: `feat(backend): auth, rbac, audit`.
 - [ ] T2.5 Super Admin APIs. Commit: `feat(backend): super admin api`.
 - [ ] T2.6 Dept Admin APIs incl. approve/reject/reopen. Commit: `feat(backend): dept admin api`.
@@ -146,31 +154,25 @@ Live app URL | login URL + credentials per role | GitHub repo | technical docs |
   Remove-Item .\_update -Recurse -Force
   ```
   Backend zips unpack into `backend/` the same way. Then `npx tsc --noEmit`, `npm run dev` (frontend) or `php artisan test` (backend). Git shows exactly what changed (`git status`), so no backups are needed.
-- Claude checks every batch in a sandbox (strict type-check for the frontend, PHP lint and tests for the backend where possible) before delivering.
+- **Claude can read the user's public GitHub repo** (`git clone --depth 1 https://github.com/Abdulrahaman1000/uemp-portal.git` works from its sandbox), so the user does NOT need to paste files that are already pushed. Anything not yet pushed still has to be pasted. Push before asking Claude to build on top of a task.
+- Claude checks every batch in a sandbox (strict type-check for the frontend; for the backend only a syntax check with an npm PHP parser, because PHP and Composer cannot be installed there) before delivering.
 
 ## 11. Next step when this chat resumes
-**T2.2 is delivered; confirm it ran, then start T2.3 (seeders).**
-1. Ask the user whether, from `backend/`, they ran (and what the output was):
+**T2.3 (seeders) is delivered. The user installs it, seeds Neon, checks counts, commits and pushes. Then T2.4.**
+1. Install the zip (from `backend/`; this zip only has `database/`, `.env.example` and `HANDOVER.md`):
    ```
-   php artisan migrate
-   php artisan migrate:status
-   php artisan db:show --counts | Select-String -NotMatch "URL"
-   ```
-   All 8 new migrations plus Laravel's defaults should show `Ran`, and Neon should list 20+ tables. (They must NOT paste unfiltered `db:show` output: it prints the Neon password.) If a migration fails, fix that first; typical causes are a different filename for the Sanctum migration or an earlier partial run (`php artisan migrate:fresh` is safe now because the database has no real data).
-2. User commits and pushes: `git add -A`, `git status` (check `backend/.env` is NOT listed), `git commit -m "feat(backend): schema and models"`, `git push`.
-3. **T2.3 seeders** (mirror `frontend/client/lib/mock.ts`): 1 super admin (superadmin@northstar.edu / demo123), dept admins (deptadmin@northstar.edu for CSC; second for ECO), 3 lecturers (lecturer@northstar.edu = Dr. Maya Chen), 6 students (student@northstar.edu = Avery Johnson, CSC/2023/001, level 300), 2 faculties, 3 departments, 4 programs, sessions 2026/2027 (current, First semester current) and 2025/2026, 8 courses, assignments for the current session, 3 registrations, 5 result submissions covering draft/submitted/approved/rejected/reopened with scores and audit rows, and a few audit logs. Use one default demo password for every account and list the accounts in the README (T4.3).
-4. Then T2.4 (auth, role middleware, department scoping, AuditLogger, camelCase API Resources, CORS via `CORS_ALLOWED_ORIGINS`), T2.5 to T2.10 as in section 9. Deliver each as one zip with the install block below, then commit and push. Update this handover after every task.
-5. Backend install block (run from `backend/`; the zip has `app/`, `database/`, `docs/` and `HANDOVER.md` at its root; adjust the zip name):
-   ```
-   Expand-Archive -Path "$HOME\Downloads\<zip name>.zip" -DestinationPath .\_update -Force
-   Copy-Item .\_update\app\* .\app\ -Recurse -Force
+   Expand-Archive -Path "$HOME\Downloads\uemp-backend-3.zip" -DestinationPath .\_update -Force
    Copy-Item .\_update\database\* .\database\ -Recurse -Force
-   Copy-Item .\_update\docs\* ..\docs\ -Recurse -Force
    Copy-Item .\_update\.env.example .\.env.example -Force
    Copy-Item .\_update\HANDOVER.md ..\HANDOVER.md -Force
    Remove-Item .\_update -Recurse -Force
    ```
-   (later zips may add `routes/`, `config/`, `tests/`: copy those folders the same way.)
-6. Security note: the Neon password was exposed once in chat via unfiltered `db:show` output. The user was told to reset it. Remind them to confirm the reset was done (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`).
+2. Seed (from `backend/`): `php artisan db:seed`. It prints the demo accounts. If it fails with a duplicate or constraint error from an earlier partial run, use `php artisan migrate:fresh --seed` (safe: no real data yet). Ask the user to paste the first error lines if it fails (never paste `.env` or unfiltered `db:show`).
+3. Verify the counts (expected: users 13, students 7, lecturers 3, faculties 2, departments 3, programs 4, sessions 2, semesters 4, courses 10, assignments 9, registrations 7, items 10, submissions 8, results 10, audit logs 13):
+   ```
+   php artisan tinker --execute="echo json_encode(['users'=>App\Models\User::count(),'students'=>App\Models\Student::count(),'lecturers'=>App\Models\Lecturer::count(),'faculties'=>App\Models\Faculty::count(),'departments'=>App\Models\Department::count(),'programs'=>App\Models\Program::count(),'sessions'=>App\Models\AcademicSession::count(),'semesters'=>App\Models\Semester::count(),'courses'=>App\Models\Course::count(),'assignments'=>App\Models\CourseAssignment::count(),'registrations'=>App\Models\Registration::count(),'items'=>DB::table('registration_items')->count(),'submissions'=>App\Models\ResultSubmission::count(),'results'=>App\Models\Result::count(),'audit'=>App\Models\AuditLog::count()]);"
+   ```
+4. Commit and push from the repo root: `git add -A`, `git status` (check `backend/.env` is NOT listed), `git commit -m "feat(backend): seed data"`, `git push`.
+5. **T2.4 next: auth, role middleware, department scoping, AuditLogger, camelCase API Resources.** Build against the exact frontend contract in `frontend/client/types/portal.ts` and the routes in `frontend/client/lib/mock.ts` (Claude can read both from the repo after pushing). Include: `POST /api/login` returning `{token, user}` (reject inactive/suspended with a clear message, 401 for bad credentials, throttle), `POST /api/logout`, `GET /api/me`; a `role` middleware (403 with JSON); a department scope helper for dept admins; `AuditLogger` service (user snapshot, role, IP, auditable record); API Resources returning camelCase with string ids (exceptions: `User` uses snake_case `department_id`/`department_name`, `PageMeta` is snake_case); CORS from `CORS_ALLOWED_ORIGINS`; `routes/api.php` skeleton. Deliver as a zip with `app/`, `routes/`, `bootstrap/` (if needed), `config/` (if needed), and `HANDOVER.md`; adapt the install block to the folders present. Then T2.5 to T2.10 as in section 9. Update this handover after every task.
+6. Reminder: confirm the Neon password was reset after it was exposed in chat once (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`).
 7. Time check: backend by Tue night, frontend for the three roles and integration on Wed, docs and demo on Thu (deadline Thu 12 Nov, 11:55 PM WAT).
-8. The sandbox Claude uses cannot install Composer packages (packagist is blocked), so PHP code is only lint-checked there (`php -l`); the user's machine is where migrations and tests really run. Ask the user to paste any error output.

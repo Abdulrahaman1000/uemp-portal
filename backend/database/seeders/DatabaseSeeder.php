@@ -2,24 +2,35 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
-     * Seed the application's database.
+     * Demo data for UEMP. Safe to run more than once (records are matched by their unique keys).
+     * For a clean start use: php artisan migrate:fresh --seed
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        DB::transaction(function () {
+            $this->call([
+                AcademicStructureSeeder::class,
+                UserSeeder::class,
+                CourseSeeder::class,
+                RegistrationSeeder::class,
+                ResultSeeder::class,
+                AuditLogSeeder::class,
+            ]);
+        });
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        $this->command?->info('Demo accounts (password for all: '.DemoSeed::password().')');
+        $this->command?->table(['Role', 'Email'], [
+            ['Super admin', 'superadmin@northstar.edu'],
+            ['Dept admin (Computer Science)', 'deptadmin@northstar.edu'],
+            ['Dept admin (Economics)', 'h.cooper@northstar.edu'],
+            ['Lecturer', 'lecturer@northstar.edu'],
+            ['Student', 'student@northstar.edu'],
         ]);
     }
 }
