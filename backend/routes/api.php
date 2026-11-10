@@ -1,6 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\DepartmentController;
+use App\Http\Controllers\Api\Admin\FacultyController;
 use App\Http\Controllers\Api\Admin\OverviewController;
+use App\Http\Controllers\Api\Admin\ProgramController;
+use App\Http\Controllers\Api\Admin\SemesterController;
+use App\Http\Controllers\Api\Admin\SessionController;
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,6 +35,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             ->whereIn('type', ['students', 'registrations', 'results']);
 
         // T2.5b: faculties, departments, programs, sessions and semesters
+        Route::apiResource('faculties', FacultyController::class)->parameters(['faculties' => 'faculty']);
+        Route::apiResource('departments', DepartmentController::class);
+        Route::apiResource('programs', ProgramController::class);
+        Route::apiResource('sessions', SessionController::class);
+        Route::post('/sessions/{session}/activate', [SessionController::class, 'activate']);
+        Route::apiResource('semesters', SemesterController::class);
+        Route::post('/semesters/{semester}/activate', [SemesterController::class, 'activate']);
         // T2.5c: courses and users
         // T2.5d: read-only lists (students, lecturers, registrations, submissions, activity logs)
     });
