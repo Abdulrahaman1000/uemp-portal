@@ -1,15 +1,19 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\CourseController;
 use App\Http\Controllers\Api\Admin\DepartmentController;
 use App\Http\Controllers\Api\Admin\FacultyController;
-use App\Http\Controllers\Api\Admin\CourseController;
 use App\Http\Controllers\Api\Admin\OverviewController;
 use App\Http\Controllers\Api\Admin\OversightController;
-use App\Http\Controllers\Api\Admin\UserController;
 use App\Http\Controllers\Api\Admin\ProgramController;
 use App\Http\Controllers\Api\Admin\SemesterController;
 use App\Http\Controllers\Api\Admin\SessionController;
+use App\Http\Controllers\Api\Admin\UserController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentListController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentReportController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -61,19 +65,26 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/activity-logs', [OversightController::class, 'activityLogs']);
     });
 
-    // T2.6: Route::prefix('dept')->middleware('role:dept_admin')->group(...)
+    // ---------- Department Admin (T2.6): every query is limited to the admin's own department ----------
+    Route::prefix('dept')->middleware('role:dept_admin')->group(function () {
+        // T2.6a: dashboard and the result approval workflow
+        Route::get('/dashboard', [DepartmentDashboardController::class, 'dashboard']);
+        Route::get('/submissions', [DepartmentSubmissionController::class, 'index']);
+        Route::get('/submissions/{submission}', [DepartmentSubmissionController::class, 'show']);
+        Route::get('/submissions/{submission}/results', [DepartmentSubmissionController::class, 'results']);
+        Route::post('/submissions/{submission}/approve', [DepartmentSubmissionController::class, 'approve']);
+        Route::post('/submissions/{submission}/reject', [DepartmentSubmissionController::class, 'reject']);
+        Route::post('/submissions/{submission}/reopen', [DepartmentSubmissionController::class, 'reopen']);
+        // T2.6b: read-only lists and reports
+        Route::get('/students', [DepartmentListController::class, 'students']);
+        Route::get('/lecturers', [DepartmentListController::class, 'lecturers']);
+        Route::get('/courses', [DepartmentListController::class, 'courses']);
+        Route::get('/registrations', [DepartmentListController::class, 'registrations']);
+        Route::get('/reports/{type}', [DepartmentReportController::class, 'show'])
+            ->whereIn('type', ['students', 'registrations', 'results']);
+        // T2.6c (later): course create/update/assign, student and lecturer edits
+    });
+
     // T2.7: Route::prefix('lecturer')->middleware('role:lecturer')->group(...)
     // T2.8: Route::prefix('student')->middleware('role:student')->group(...)
-});
-
-
-// T2.6: Dept Admin APIs
-Route::prefix('dept')->middleware('role:dept_admin')->group(function () {
-    Route::get('/dashboard', [\App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController::class, 'dashboard']);
-    Route::get('/submissions', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'index']);
-    Route::get('/submissions/{submission}', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'show']);
-    Route::post('/submissions/{submission}/approve', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'approve']);
-    Route::post('/submissions/{submission}/reject', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'reject']);
-    Route::post('/submissions/{submission}/reopen', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'reopen']);
-    Route::get('/reports/{type}', [\App\Http\Controllers\Api\DeptAdmin\DepartmentReportController::class, 'show']);
 });
