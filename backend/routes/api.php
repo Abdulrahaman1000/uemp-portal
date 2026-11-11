@@ -10,7 +10,9 @@ use App\Http\Controllers\Api\Admin\SemesterController;
 use App\Http\Controllers\Api\Admin\SessionController;
 use App\Http\Controllers\Api\Admin\UserController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentCourseController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentPeopleController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentListController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentReportController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController;
@@ -88,7 +90,18 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/registrations', [DepartmentListController::class, 'registrations']);
         Route::get('/reports/{type}', [DepartmentReportController::class, 'show'])
             ->whereIn('type', ['students', 'registrations', 'results']);
-        // T2.6c (later): course create/update/assign, student and lecturer edits
+        // T2.6c: department management (department is always the admin's own)
+        Route::get('/programs', [DepartmentPeopleController::class, 'programs']);
+        Route::post('/courses', [DepartmentCourseController::class, 'store']);
+        Route::put('/courses/{course}', [DepartmentCourseController::class, 'update']);
+        Route::delete('/courses/{course}', [DepartmentCourseController::class, 'destroy']);
+        Route::post('/courses/{course}/assign', [DepartmentCourseController::class, 'assign']);
+        Route::post('/students', [DepartmentPeopleController::class, 'storeStudent']);
+        Route::put('/students/{student}', [DepartmentPeopleController::class, 'updateStudent']);
+        Route::patch('/students/{student}/status', [DepartmentPeopleController::class, 'studentStatus']);
+        Route::post('/lecturers', [DepartmentPeopleController::class, 'storeLecturer']);
+        Route::put('/lecturers/{lecturer}', [DepartmentPeopleController::class, 'updateLecturer']);
+        Route::patch('/lecturers/{lecturer}/status', [DepartmentPeopleController::class, 'lecturerStatus']);
     });
 
     // ---------- Lecturer (T2.7): only courses assigned to the lecturer in the current session ----------

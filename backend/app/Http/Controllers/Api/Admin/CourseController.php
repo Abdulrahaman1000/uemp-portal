@@ -116,6 +116,16 @@ class CourseController extends Controller
         return response()->noContent();
     }
 
+    /** Set (or with null, remove) the lecturer of a course for the current session. Used by the department admin too. */
+    public function assign(Course $course, ?int $lecturerId, User $actor): void
+    {
+        DB::transaction(function () use ($course, $lecturerId, $actor) {
+            $lecturerId === null
+                ? $this->unassignLecturer($course, $actor)
+                : $this->assignLecturer($course, $lecturerId, $actor);
+        });
+    }
+
     private function fresh(Course $course): Course
     {
         return $course->fresh(['department', 'currentAssignment.lecturer.user']);
