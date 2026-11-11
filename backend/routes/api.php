@@ -14,6 +14,9 @@ use App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentListController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentReportController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController;
+use App\Http\Controllers\Api\Lecturer\LecturerCourseController;
+use App\Http\Controllers\Api\Lecturer\LecturerDashboardController;
+use App\Http\Controllers\Api\Lecturer\LecturerResultController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -85,6 +88,16 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         // T2.6c (later): course create/update/assign, student and lecturer edits
     });
 
-    // T2.7: Route::prefix('lecturer')->middleware('role:lecturer')->group(...)
+    // ---------- Lecturer (T2.7): only courses assigned to the lecturer in the current session ----------
+    Route::prefix('lecturer')->middleware('role:lecturer')->group(function () {
+        Route::get('/dashboard', [LecturerDashboardController::class, 'dashboard']);
+        Route::get('/courses', [LecturerCourseController::class, 'index']);
+        Route::get('/courses/{course}/students', [LecturerCourseController::class, 'students']);
+        Route::get('/courses/{course}/summary', [LecturerCourseController::class, 'summary']);
+        Route::put('/courses/{course}/results', [LecturerResultController::class, 'save']);
+        Route::post('/courses/{course}/results/submit', [LecturerResultController::class, 'submit']);
+        Route::get('/submissions', [LecturerResultController::class, 'submissions']);
+    });
+
     // T2.8: Route::prefix('student')->middleware('role:student')->group(...)
 });

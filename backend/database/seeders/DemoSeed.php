@@ -2,13 +2,12 @@
 
 namespace Database\Seeders;
 
+use App\Services\GradingService;
 use Carbon\Carbon;
 
 /**
  * Small helpers shared by the demo seeders.
- *
- * NOTE: the grade bands below mirror frontend/client/lib/mock.ts. When the configurable
- * GradingService (config/grading.php, T2.7) is added, the seeders should call it instead.
+ * Grades come from the GradingService, which reads config/grading.php (single source of truth).
  */
 final class DemoSeed
 {
@@ -21,14 +20,7 @@ final class DemoSeed
     /** @return array{0: string, 1: float} [letter grade, grade point] */
     public static function grade(float $total): array
     {
-        return match (true) {
-            $total >= 70 => ['A', 5.0],
-            $total >= 60 => ['B', 4.0],
-            $total >= 50 => ['C', 3.0],
-            $total >= 45 => ['D', 2.0],
-            $total >= 40 => ['E', 1.0],
-            default => ['F', 0.0],
-        };
+        return app(GradingService::class)->grade($total);
     }
 
     public static function at(string $time): Carbon
