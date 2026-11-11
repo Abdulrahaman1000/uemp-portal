@@ -1,4 +1,4 @@
-# UEMP Assessment — Handover (v17, Tue 10 Nov 2026)
+# UEMP Assessment — Handover (v18, Tue 10 Nov 2026)
 
 Paste this whole file into a new chat to continue without losing context. Claude cannot push to GitHub from chat. The user runs all git commands and pastes the output back.
 
@@ -116,7 +116,7 @@ Paste this whole file into a new chat to continue without losing context. Claude
   - Lecturer API id = `lecturers.id` (profile id, not the user id). `Course.lecturerId/lecturerName` come from the `course_assignments` row of the CURRENT session. Saving a course with `lecturerId` must upsert that assignment (422 if there is no current session); `lecturerId: null` removes it. Course form fields: code, title, units, level, semester, type, departmentId, programId, lecturerId.
   - Session create body is only `{name, startDate, endDate}` and the Sessions page needs `semesters` on every session (it calls `.map`). So creating a session must also create its First and Second semesters automatically (suggested: First = start date to about 4.5 months later, Second = about 5 months after start to the end date). `POST /admin/sessions/{id}/activate` makes that session current and its First semester current; `POST /admin/semesters/{id}/activate` makes the parent session and that semester current (the UI only offers it for the current session). Both run in one transaction that clears ALL current flags first (partial unique indexes). Delete of a session or semester that has registrations, assignments or submissions must return a clear 422 (foreign keys restrict).
   - User role change: students and lecturers have profile rows, and a dept admin needs `users.department_id` or the department scope fails closed. In T2.5c either refuse role changes that would break this (clear 422) or create the missing data; never leave a dept admin without a department. Changing your own status or role is a 422; a non-active status deletes the user's tokens.
-  - Known latent bug: `AuditLogger::record()` stores `'role' => 'system'` when the actor is null, but `AuditLog.role` is cast to the `UserRole` enum, so a null-actor log would throw. Not hit so far (all actors exist). Fix it before logging anything without an actor, and read the audit role with `getRawOriginal('role')` in the activity-log resource.
+  - (FIXED in the 5d fix zip by `AuditRole` cast) Known latent bug: `AuditLogger::record()` stores `'role' => 'system'` when the actor is null, but `AuditLog.role` is cast to the `UserRole` enum, so a null-actor log would throw. Not hit so far (all actors exist). Fix it before logging anything without an actor, and read the audit role with `getRawOriginal('role')` in the activity-log resource.
   - Repo cleanup still open: the repo ROOT has a stray `database/` folder with 8 seeder files (AcademicStructureSeeder, AuditLogSeeder, CourseSeeder, DatabaseSeeder, DemoSeed, RegistrationSeeder, ResultSeeder, UserSeeder) and a root `.env.example`. They look like a mis-unpacked seeders zip. Compare with `backend/database/seeders/` first (`git ls-files backend/database/seeders`), then `git rm -r database` and commit `chore: remove stray root seeders`. Do not delete before comparing.
 
 ## 6. Frontend gaps found
@@ -196,10 +196,16 @@ Live app URL | login URL + credentials per role | GitHub repo | technical docs |
 - **Security reminder:** never paste tokens, passwords or `.env` content into chat. The Neon password was exposed in chat once; reset it (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`) if not done yet.
 
 ## 11. Next step when this chat resumes
-**Where we are: 5a pushed, 5b done locally, 5c delivered (`uemp-backend-5c.zip`), waiting for the user to install, run `php artisan test` and push.**
-1. Install 5c from `backend/` (see the install block given in chat), then `php artisan config:clear`, `php artisan route:list --path=api/admin` (expect the 7 new routes), `php artisan test`.
-2. Commit from the repo root: `git add -A`, `git status` (no `backend/.env`), `git commit -m "feat(backend): super admin api (5c)"`, `git push`.
-3. **T2.5d next**: read-only lists (students, lecturers, registrations, submissions, activity logs). Check the filters in `frontend/client/lib/api.ts` first (users done; registrations `level`; submissions `status`; activity logs `user`, `action`, `from`, `to`). Fix the null-actor `AuditLogger` bug before logging without an actor.
-4. Then T2.6 to T2.10 as in section 9. Update this handover after every task.
-5. Reminders: confirm the Neon password was reset; clean up the stray root `app/`, `database/`, `tests/` folders after comparing with `backend/`.
+**Where we are: 5a, 5b, 5c are pushed (113 tests passed). 5d is installed locally. First run gave 115 passed, 4 failed; the fix zip `uemp-backend-5d-fix.zip` is delivered and waits to be installed.**
+- 5d adds `OversightController` (students, lecturers, registrations, submissions, activity logs; routes patched into `routes/api.php`; 43 admin routes confirmed) and `tests/Feature/Admin/OversightApiTest.php` (6 tests).
+- Causes of the 4 failures and the fixes in the zip:
+  1. `lecturers` and `submissions` lists showed 0 for `courseCount` / `studentCount`: `->select('x.*')` was called AFTER `withCount()`, which wipes the count column. Rule for the rest of the project: call `select('table.*')` BEFORE `withCount()` when a query also uses `join()`.
+  2. Activity logs crashed on actor-less rows: `AuditLog.role` was cast to the `UserRole` enum but `AuditLogger` stores `system`. New cast `app/Casts/AuditRole.php` (real users still return a `UserRole` enum, `system` stays a string). This closes the known null-actor bug.
+  3. Test `only super admins can read these lists` got 403 instead of 401: Laravel keeps the last signed-in user inside one test. The test now calls `$this->app['auth']->forgetGuards()` before each no-token request. It was a test problem, not a security bug. Use the same trick in future tests that mix token and no-token calls.
+- Zip contents: `app/Casts/AuditRole.php`, `app/Models/AuditLog.php`, `app/Http/Controllers/Api/Admin/OversightController.php`, `tests/Feature/Admin/OversightApiTest.php`, this handover. The fixes were syntax-checked only (`php -l`), NOT run (no Composer in the sandbox), so the user must run `php artisan test`. Expected: 119 passed.
+1. Install the fix from `backend/`, then `php artisan test`.
+2. If all pass, from the repo root: `git add -A`, `git status` (no `backend/.env`), `git commit -m "feat(backend): super admin api (5d)"`, `git push`. T2.5 is then finished.
+3. **T2.6 next:** Dept Admin APIs under `/api/dept` (role:dept_admin, `DepartmentScope::apply()` on every list, `authorize()` on every single record), including approve / reject (feedback required) / reopen of submissions, all audited. Check the dept calls in `frontend/client/lib/api.ts` first (or design them from section 7 if the screens are not built yet).
+4. Then T2.7 to T2.10 as in section 9. Update this handover after every task.
+5. Reminders: confirm the Neon password was reset; the stray root `app/`, `database/`, `tests/` folders (compare with `backend/` before deleting); paste into PowerShell can crash the line editor, so attach files instead of pasting.
 6. Time check: backend by Tue night, three role frontends and integration on Wed, docs and demo on Thu (deadline Thu 12 Nov, 11:55 PM WAT).

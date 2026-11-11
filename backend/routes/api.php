@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Admin\DepartmentController;
 use App\Http\Controllers\Api\Admin\FacultyController;
 use App\Http\Controllers\Api\Admin\CourseController;
 use App\Http\Controllers\Api\Admin\OverviewController;
+use App\Http\Controllers\Api\Admin\OversightController;
 use App\Http\Controllers\Api\Admin\UserController;
 use App\Http\Controllers\Api\Admin\ProgramController;
 use App\Http\Controllers\Api\Admin\SemesterController;
@@ -52,7 +53,12 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/users', [UserController::class, 'index']);
         Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
         Route::patch('/users/{user}/role', [UserController::class, 'updateRole']);
-        // T2.5d: read-only lists (students, lecturers, registrations, submissions, activity logs)
+        // T2.5d: read-only lists
+        Route::get('/students', [OversightController::class, 'students']);
+        Route::get('/lecturers', [OversightController::class, 'lecturers']);
+        Route::get('/registrations', [OversightController::class, 'registrations']);
+        Route::get('/submissions', [OversightController::class, 'submissions']);
+        Route::get('/activity-logs', [OversightController::class, 'activityLogs']);
     });
 
     // T2.6: Route::prefix('dept')->middleware('role:dept_admin')->group(...)

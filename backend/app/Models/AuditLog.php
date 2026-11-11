@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Enums\UserRole;
+use App\Casts\AuditRole;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -31,7 +31,8 @@ class AuditLog extends Model
     protected function casts(): array
     {
         return [
-            'role' => UserRole::class,
+            // UserRole for real users, the plain string "system" when there was no actor.
+            'role' => AuditRole::class,
             'metadata' => 'array',
             'created_at' => 'datetime',
         ];
