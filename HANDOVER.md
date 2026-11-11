@@ -310,3 +310,9 @@ Done so far: T0.1, T0.2a, T0.2b, T1.1, T1.2 and T1.4 (built, untested in browser
 3. Deliver every batch as ONE zip, with explicit copy commands, and say from which folder to run them. Update this handover after every task.
 4. Reminders: confirm the Neon password was reset; a local `dist/` folder at the repo root is ignored build output and can be deleted.
 5. Never cut: dept scoping, approval flow, registration rules, audit logs.
+
+## 12. Wed 11 Nov update (docs delivered, deploy done)
+- **Deployed and working:** API https://uemp-api-rjqv.onrender.com (Render, Blueprint), frontend https://uemp-portal.vercel.app (Vercel, root `frontend`). `CORS_ALLOWED_ORIGINS` on Render includes localhost 8080-8082 and the Vercel URL. The user confirmed login works online. T2.6c, T1.2, T1.4, T2.10, T3.1, T3.3 are DONE.
+- **Docs delivered (zip `uemp-docs.zip`):** `README.md` (root, with credentials and live URLs), `docs/TECHNICAL.md`, `docs/er-diagram.png|svg|mmd`. T4.1, T4.2, T4.3 done once pushed (commit `docs: er diagram, technical documentation and readme`).
+- **Still open:** T3.2 full end-to-end test on the LIVE site with all four roles (a quick tour is in the README), T4.4 demo video (3-5 min), T4.5 submission message. Optional: remove stray root `app/`, `database/`, `tests/` folders (old mis-unpacked copies; check `git ls-files app database tests` first), confirm the Neon password was reset, T1.5 polish, T2.9 extra tests.
+- **Before the demo:** open `/up` and log in once to wake Render and Neon.

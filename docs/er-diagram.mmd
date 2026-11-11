@@ -1,0 +1,103 @@
+erDiagram
+    FACULTIES ||--o{ DEPARTMENTS : has
+    DEPARTMENTS ||--o{ PROGRAMS : offers
+    DEPARTMENTS ||--o{ COURSES : owns
+    PROGRAMS ||--o{ COURSES : includes
+    DEPARTMENTS ||--o{ USERS : "scopes dept admin"
+    USERS ||--o| STUDENTS : "profile"
+    USERS ||--o| LECTURERS : "profile"
+    DEPARTMENTS ||--o{ STUDENTS : enrols
+    PROGRAMS ||--o{ STUDENTS : "studies"
+    DEPARTMENTS ||--o{ LECTURERS : employs
+    ACADEMIC_SESSIONS ||--o{ SEMESTERS : contains
+    ACADEMIC_SESSIONS ||--o{ COURSE_ASSIGNMENTS : "per session"
+    COURSES ||--o{ COURSE_ASSIGNMENTS : "taught via"
+    LECTURERS ||--o{ COURSE_ASSIGNMENTS : teaches
+    STUDENTS ||--o{ REGISTRATIONS : makes
+    SEMESTERS ||--o{ REGISTRATIONS : "in"
+    REGISTRATIONS ||--o{ REGISTRATION_ITEMS : lists
+    COURSES ||--o{ REGISTRATION_ITEMS : "registered as"
+    COURSES ||--o{ RESULT_SUBMISSIONS : "results for"
+    SEMESTERS ||--o{ RESULT_SUBMISSIONS : "in"
+    LECTURERS ||--o{ RESULT_SUBMISSIONS : submits
+    USERS ||--o{ RESULT_SUBMISSIONS : "reviews"
+    RESULT_SUBMISSIONS ||--o{ RESULTS : holds
+    STUDENTS ||--o{ RESULTS : scored
+    USERS ||--o{ AUDIT_LOGS : "acts in"
+
+    USERS { bigint id PK
+        string name
+        string email UK
+        enum role "student lecturer dept_admin super_admin"
+        enum status "active inactive suspended"
+        bigint department_id FK "dept admins only" }
+    FACULTIES { bigint id PK
+        string name UK
+        string code UK }
+    DEPARTMENTS { bigint id PK
+        bigint faculty_id FK
+        string name
+        string code UK }
+    PROGRAMS { bigint id PK
+        bigint department_id FK
+        string name
+        int duration_years }
+    ACADEMIC_SESSIONS { bigint id PK
+        string name UK
+        bool is_current "only one true" }
+    SEMESTERS { bigint id PK
+        bigint academic_session_id FK
+        enum name "First Second"
+        bool is_current "only one true" }
+    STUDENTS { bigint id PK
+        bigint user_id FK
+        string matric_no UK
+        bigint department_id FK
+        bigint program_id FK
+        int level
+        datetime graduated_at }
+    LECTURERS { bigint id PK
+        bigint user_id FK
+        bigint department_id FK
+        string staff_id UK }
+    COURSES { bigint id PK
+        string code UK
+        int units
+        int level
+        enum semester
+        enum type "core elective"
+        bigint department_id FK
+        bigint program_id FK }
+    COURSE_ASSIGNMENTS { bigint id PK
+        bigint course_id FK
+        bigint lecturer_id FK
+        bigint academic_session_id FK "unique per course and session" }
+    REGISTRATIONS { bigint id PK
+        bigint student_id FK
+        bigint semester_id FK "unique per student and semester" }
+    REGISTRATION_ITEMS { bigint id PK
+        bigint registration_id FK
+        bigint course_id FK "unique per registration and course" }
+    RESULT_SUBMISSIONS { bigint id PK
+        bigint course_id FK
+        bigint semester_id FK
+        bigint lecturer_id FK
+        enum status "draft submitted approved rejected reopened"
+        text feedback
+        bigint reviewed_by FK }
+    RESULTS { bigint id PK
+        bigint result_submission_id FK
+        bigint student_id FK
+        decimal ca_score
+        decimal exam_score
+        decimal total_score
+        string grade
+        decimal grade_point }
+    AUDIT_LOGS { bigint id PK
+        bigint user_id FK
+        string user_name
+        string role
+        string action
+        string entity
+        string auditable_type
+        bigint auditable_id "append-only" }
