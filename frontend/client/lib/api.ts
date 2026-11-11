@@ -1,7 +1,8 @@
 import type {
-  AcademicSession, AdminDashboard, AuditLog, AuthSession, Course, Department, Faculty,
-  GradingScale, Lecturer, LoginCredentials, Paginated, Program, RegistrationRecord,
-  ResultSubmission, RolePermission, Student, User, UserRole, UserStatus,
+  AcademicSession, AdminDashboard, AuditLog, AuthSession, ClassSheet, Course, CourseSummary, Department,
+  Faculty, GradingScale, Lecturer, LecturerCourse, LecturerDashboard, LoginCredentials, PageMeta, Paginated,
+  Program, RegistrationRecord, ResultSubmission, RolePermission, ScoreInput, Student, User, UserRole,
+  UserStatus,
 } from "../types/portal";
 import { MockApiError, mockRequest } from "./mock";
 
@@ -236,5 +237,19 @@ export const api = {
     activityLogs: (params: ListParams = {}) =>
       apiRequest<Paginated<AuditLog>>(`/admin/activity-logs${toQuery(params)}`),
     report: (type: ReportType) => apiRequest<ReportRow[]>(`/admin/reports/${type}`),
+  },
+
+  // Lecturer: only the courses assigned to the signed-in lecturer in the current session.
+  lecturer: {
+    dashboard: () => apiRequest<LecturerDashboard>("/lecturer/dashboard"),
+    courses: () => apiRequest<{ data: LecturerCourse[]; meta: PageMeta }>("/lecturer/courses"),
+    students: (courseId: string) => apiRequest<ClassSheet>(`/lecturer/courses/${courseId}/students`),
+    saveResults: (courseId: string, scores: ScoreInput[]) =>
+      apiRequest<ClassSheet>(`/lecturer/courses/${courseId}/results`, { method: "PUT", body: { scores } }),
+    submitResults: (courseId: string) =>
+      apiRequest<ClassSheet>(`/lecturer/courses/${courseId}/results/submit`, { method: "POST" }),
+    summary: (courseId: string) => apiRequest<CourseSummary>(`/lecturer/courses/${courseId}/summary`),
+    submissions: (params: ListParams = {}) =>
+      apiRequest<Paginated<ResultSubmission>>(`/lecturer/submissions${toQuery(params)}`),
   },
 };

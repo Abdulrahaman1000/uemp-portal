@@ -232,3 +232,71 @@ export interface AdminDashboard {
   currentSession: string;
   currentSemester: SemesterName;
 }
+
+// ---------- Lecturer (matches /api/lecturer/*) ----------
+
+export interface LecturerDashboard {
+  lecturerName: string;
+  departmentName: string;
+  assignedCourses: number;
+  totalStudents: number;
+  /** Assigned courses of the current semester that have no result sheet yet. */
+  notStarted: number;
+  submissionsByStatus: Record<ResultStatus, number>;
+  currentSession: string;
+  currentSemester: SemesterName;
+}
+
+export interface LecturerCourse extends Course {
+  studentCount: number;
+  submissionStatus: ResultStatus;
+  feedback: string | null;
+}
+
+export interface ClassRow {
+  studentId: string;
+  matricNo: string;
+  studentName: string;
+  level: number;
+  caScore: number | null;
+  examScore: number | null;
+  totalScore: number | null;
+  grade: string | null;
+  gradePoint: number | null;
+}
+
+/** The class list of one course with its scores, status and the grading limits. */
+export interface ClassSheet {
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  units: number;
+  sessionName: string;
+  semester: SemesterName;
+  status: ResultStatus;
+  feedback: string | null;
+  canEdit: boolean;
+  caMax: number;
+  examMax: number;
+  students: ClassRow[];
+}
+
+export interface ScoreInput {
+  studentId: string;
+  caScore: number | null;
+  examScore: number | null;
+}
+
+export interface CourseSummary {
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  status: ResultStatus;
+  totalStudents: number;
+  scoredStudents: number;
+  average: number | null;
+  highest: number | null;
+  lowest: number | null;
+  passRate: number | null;
+  gradeDistribution: Record<string, number>;
+}

@@ -1,4 +1,4 @@
-# UEMP Assessment — Handover (v19, Wed 11 Nov 2026)
+# UEMP Assessment — Handover (v25, Wed 11 Nov 2026)
 
 Paste this whole file into a new chat to continue without losing context. Claude cannot push to GitHub from chat. The user runs all git commands and pastes the output back.
 
@@ -124,6 +124,8 @@ Paste this whole file into a new chat to continue without losing context. Claude
   - **`DepartmentScope` has NO `resolveDepartmentId()` method** (the committed file has `apply`, `canAccess`, `authorize` only). Use `$user->resolveDepartmentId()` on the `User` model, or `DepartmentScope::apply`.
   - **Draft T2.6 work was moved out of the repo** to `%USERPROFILE%\Downloads\_draft-t26` (`DeptAdminControllers`, `DeptAdminTests`). It was written with a PowerShell double-quoted here-string, so every `$variable` was stripped and the PHP is corrupted (`public function index(Request ): mixed`). Do NOT reuse it. It also called a non-existent `DepartmentScope::resolveDepartmentId()` and its test created courses without `program_id` (required). `routes/api.php` was checked for leftover `/api/dept` routes before the commit.
 - **Lessons from this session (avoid repeating):**
+  - **Run each unpack block from the folder the block says** (backend zips from `backend/`, deploy/frontend zips from the REPO ROOT or `frontend/` as stated). Running a block from the wrong folder once put deployment files in `backend/backend/`. Copy files one by one with explicit paths (`Copy-Item a b`), because `Copy-Item folder\* newfolder\ -Recurse` flattens folders when the destination does not exist yet. Always check `git status` before committing: unexpected `backend/backend/`, `*.txt` or `.env` entries mean stop.
+  - Never commit debug context files (`t27-context.txt` slipped in once; removed in `911ec89`).
   - A UTF-8 BOM in a PHP file causes "Namespace declaration statement has to be the very first statement". Windows PowerShell 5 `Set-Content` / `Out-File` can add a BOM or write UTF-16. For file edits use `[System.IO.File]::WriteAllText(path, text, (New-Object System.Text.UTF8Encoding($false)))`. Check/strip BOM with the loop used on 10 Nov (reads bytes `EF BB BF` in `app, tests, routes, database, config`).
   - Never write PHP through a double-quoted here-string `@" "@`: PowerShell expands `$var`. Use a single-quoted here-string `@' '@` or, better, a zip.
   - To send big output to Claude, write it with `[System.IO.File]::WriteAllText(...)` as UTF-8 and attach the file; `Out-File` makes UTF-16 and pasting a large block into PowerShell can crash PSReadLine.
@@ -137,6 +139,45 @@ Paste this whole file into a new chat to continue without losing context. Claude
   - Dashboard JSON: `{departmentName, totalStudents, totalLecturers, totalCourses, activePrograms, pendingSubmissions, submissionsByStatus:{draft,submitted,approved,rejected,reopened}, currentSession, currentSemester}`. There is no TS type yet: add `DeptDashboard` to `portal.ts` in T1.4.
   - Rules in code: only `submitted` can be approved or rejected; only `approved` can be reopened (422 otherwise); another department's record is 403; the status change runs in one transaction with a row lock and re-checks the status; audit actions `RESULT_APPROVED`, `RESULT_REJECTED`, `RESULT_REOPENED` (feedback goes in `metadata.note`, which the `audit[].note` field shows); `reviewed_by` and `reviewed_at` are set; approve clears old feedback. A dept admin with no department sees empty lists and gets 403 on actions (fails closed). Search is wrapped in its own `where(fn)` group so it cannot bypass the department scope.
   - Not done yet: a rule that all students must have scores before approval (depends on T2.7 submit validation).
+
+- **T2.6 (6a+6b) CONFIRMED:** 134 tests passed, `3ecc583 feat(backend): dept admin api (6)` is pushed (`main...origin/main`, no ahead).
+- **T2.7 DELIVERED (zip `uemp-backend-7.zip`), waiting for the user to unpack, run `php artisan test`, and push.** Files: `app/Services/GradingService.php`, `app/Http/Requests/Lecturer/SaveScoresRequest.php`, `app/Http/Controllers/Api/Lecturer/{LecturerController (abstract base),LecturerDashboardController,LecturerCourseController,LecturerResultController}.php`, `database/seeders/DemoSeed.php` (now calls GradingService, so the seeders and the API use one scale), `routes/api.php` (full replacement: lecturer group added), tests `tests/Feature/GradingServiceTest.php` and `tests/Feature/Lecturer/LecturerApiTest.php`.
+  - **GradingService** (reads `config/grading.php` only): `caMax()`, `examMax()`, `bands()`, `grade($total)` returns `[letter, float point]`, `compute($ca, $exam)` returns `{total, grade, grade_point}` (all null unless BOTH scores exist), `gpa(rows of {point, units})` = sum(point x units)/sum(units) rounded to 2 places (null if no units; ready for the student CGPA in T2.8). A band matches when `total >= min`, checked from the top, so 69.5 is B (no gap between whole-number bands).
+  - **Routes** (all `role:lecturer`): `GET /api/lecturer/dashboard`; `GET /courses`; `GET /courses/{id}/students`; `GET /courses/{id}/summary`; `PUT /courses/{id}/results`; `POST /courses/{id}/results/submit`; `GET /submissions?status=&search=`.
+  - **Rules in code:** `ownCourse()` = a `course_assignments` row for this lecturer in the CURRENT session, else 403. Class list = students with a `registration_items` row for the course in the semester row of the current session whose name equals the course semester. Scores can only be entered while that semester is the CURRENT one (422 otherwise). Edit allowed only in draft, rejected, reopened (`ResultStatus::isEditableByLecturer`); submitted/approved give 422. Max CA/exam come from the config (Form Request builds the rules at request time; errors keyed `scores.N.caScore` / `scores.N.examScore` / `scores.N.studentId`). A student not in the class gives 422 on `scores.N.studentId`. A row with both scores null and no existing result is skipped. Submit needs at least one student and BOTH scores for EVERY registered student (422 lists up to 5 matric numbers), sets `submitted` + `submitted_at`, clears feedback. Save and submit run in one transaction with a row lock. Audit: `RESULT_DRAFT_SAVED`, `RESULT_SUBMITTED` (linked to the submission, so they show in the audit trail). The dept "all students must have scores before approval" gap is covered because submit enforces it.
+  - **JSON for the frontend (no TS types yet, add them in T1.3):**
+    - `GET /lecturer/dashboard` -> `{lecturerName, departmentName, assignedCourses, totalStudents, notStarted, submissionsByStatus:{draft,submitted,approved,rejected,reopened}, currentSession, currentSemester}`.
+    - `GET /lecturer/courses` -> `{data:[Course fields + studentCount, submissionStatus, feedback], meta}` (not paginated, one page).
+    - `GET /courses/{id}/students` and the responses of `PUT .../results` and `POST .../results/submit` all return `{courseId, courseCode, courseTitle, units, sessionName, semester, status, feedback, canEdit, caMax, examMax, students:[{studentId, matricNo, studentName, level, caScore, examScore, totalScore, grade, gradePoint}]}`. `status` is `draft` until a submission row exists. `PUT` body: `{scores:[{studentId, caScore, examScore}]}` (null = not entered).
+    - `GET /courses/{id}/summary` -> `{courseId, courseCode, courseTitle, status, totalStudents, scoredStudents, average, highest, lowest, passRate, gradeDistribution:{A..F}}` (nulls when nothing is scored).
+    - `GET /lecturer/submissions` -> same shape as the dept submissions (`SubmissionResource`, with `feedback` and `audit`), only this lecturer's own.
+  - Not done: lecturer scores are not written by a "mark as not started" action; a lecturer cannot un-submit (the dept admin rejects or reopens).
+
+- **T2.7 CONFIRMED: `Tests: 155 passed (1205 assertions)`.**
+- **T2.8 DELIVERED (zip `uemp-backend-8.zip`), waiting for the user to unpack, run `php artisan test` (expect 165 passed), and push.** Files: `app/Http/Controllers/Api/Student/{StudentController (abstract base),StudentProfileController,StudentRegistrationController,StudentResultController}.php`, `routes/api.php` (full replacement, student group added), `tests/Feature/Student/StudentApiTest.php` (10 tests).
+  - **Routes** (all `role:student`; no student id in any URL or body, every query starts from `$request->user()->student`): `GET/PUT /api/student/profile`; `GET /available-courses`; `POST /registrations`; `GET /registrations`; `GET /results`; `GET /academic-history`.
+  - **Profile:** `GET` returns the `Student` shape plus `phone, address, dateOfBirth` (Y-m-d). `PUT` accepts ONLY `phone` (digits, + ( ) - and spaces), `address`, `dateOfBirth` (past date); any other field in the body is ignored (matric, level, department, status cannot change). Audit `PROFILE_UPDATED` (changed field names only).
+  - **Available courses:** `{data:[Course + registered:bool], meta, sessionName, semester}`: courses of the student's own department, program and level in the CURRENT semester name. Empty when there is no current semester.
+  - **Register** `POST /student/registrations` body `{courseIds:[..]}` returns 201 with the full `RegistrationRecord` (all courses of that semester's registration). Rules: dept, program, level and current semester must all match (422 keyed `courseIds.N`); a course already registered this semester is a friendly 422 on `courseIds.N` and nothing is added (whole request is atomic); more courses later go into the SAME registration row; graduated students and "no current semester" give 422. Audit `COURSE_REGISTERED` (entity = course codes, linked to the registration).
+  - **Registrations list:** `{data:[RegistrationRecord], meta}` newest semester first (use it for the print summary).
+  - **Results:** `{data:[{id, courseId, courseCode, courseTitle, units, sessionName, semester, caScore, examScore, totalScore, grade, gradePoint}], meta}`: APPROVED submissions only and only the student's own rows. A reopened result disappears again.
+  - **Academic history:** `{matricNo, studentName, departmentName, programName, level, cgpa, totalUnits, totalCourses, semesters:[{sessionName, semester, totalUnits, gpa, courses:[same row as results]}]}`, oldest semester first. `cgpa` and `gpa` come from `GradingService::gpa` (sum(point x units)/sum(units), 2 decimals) and are `null` when there are no approved results. The result statement print view can use this endpoint.
+  - Not built: no max-units rule and no registration deadline (not in the spec).
+
+- **T2.10 deployment config (Render, free Docker web service; Railway works with the same Dockerfile).**
+  - Container start (`entrypoint.sh`): binds Apache to `$PORT`; stops with a clear message if `APP_KEY` or `DB_URL` is empty; `php artisan migrate --force` (only creates missing tables); seeds ONLY when `RUN_SEED=true`; then `config:cache` (routes are not cached because `routes/web.php` has a closure). Health check path `/up`.
+  - **Environment variables** (Render asks for the `sync:false` ones): `APP_KEY` (from `php artisan key:generate --show`, run locally in `backend/`), `APP_URL` (the Render URL, `https://<name>.onrender.com`), `DB_URL` (Neon DIRECT string, the same one as in the local `backend/.env`; paste it only into the Render dashboard, never into chat), `CORS_ALLOWED_ORIGINS` (comma separated, start with `http://localhost:8080`, add the Vercel URL later). Preset in `render.yaml`: `APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=pgsql`, `DB_SSLMODE=require`, `LOG_CHANNEL=stderr`, `SESSION_DRIVER=array`, `CACHE_STORE=file`, `QUEUE_CONNECTION=sync`, `SEED_PASSWORD=demo123`, `RUN_SEED=false`.
+  - Neon already holds the seeded demo data (from `migrate:fresh --seed`), so the first deploy needs `RUN_SEED=false`. To reset the demo data later set `RUN_SEED=true`, redeploy once, set it back to `false`. NEVER run `migrate:fresh` against the live database.
+  - Free Render services sleep after ~15 min and wake in ~30-60 s, and Neon also autosuspends: open `/up` and log in once a few minutes before any demo or the submission check.
+  - After deploy: frontend `VITE_API_URL=https://<name>.onrender.com/api`, `VITE_USE_MOCK=false`; the API base path is `/api`, so `/api/login`, `/api/me` etc.
+  - Frontend on Vercel: root directory `frontend`, framework Vite, build `npm run build`, output `dist`, env `VITE_API_URL` and `VITE_USE_MOCK=false`; `vercel.json` already has the SPA rewrite.
+
+- **T1.3 lecturer portal (frontend) details.** Sections (menu ids unchanged): `overview`, `courses`, `results`, `submissions`. The lecturer screens talk ONLY to the real API (`/api/lecturer/*`): in mock mode they show an error, so test with `VITE_USE_MOCK=false`.
+  - **Overview:** welcome, stat cards (assigned courses, students taught, not started, awaiting review), "needs your attention" (rejected/reopened courses with the department feedback, link into the sheet), submissions by status.
+  - **Courses:** table with units/level/semester/students/status; buttons "Results" (goes to `/lecturer/results?course=<id>`) and "Summary" (modal: average, highest, lowest, pass rate, grade distribution bars).
+  - **Result entry** (`ResultEntry.tsx`): course picker (only assigned courses; an unknown `?course=` falls back to the first), class list grid with CA and exam inputs. Client checks: empty = not entered, else number 0..max with up to 2 decimals (max comes from the server `caMax`/`examMax`). Total shown live; grade and grade point only appear after a save (the server computes them from `config/grading.php`; unsaved rows show "unsaved"). Buttons: Save draft (needs unsaved valid changes) and Submit for review (disabled until every student has both scores; confirm dialog; saves unsaved edits first). Banners explain draft / submitted (locked) / approved (locked) / rejected and reopened (shows the department feedback) / course not in the current semester (locked). Server 422s keyed `scores.N.caScore|examScore|studentId` are shown under row N; 403 or a locked-sheet 422 reloads the sheet.
+  - **Submissions:** the lecturer's own submissions with status filter, search, pagination, feedback column and a details modal with the audit timeline.
+  - How to test locally: terminal 1 `cd backend` then `php artisan serve`; terminal 2 `cd frontend`, set `frontend/.env` to `VITE_API_URL=http://localhost:8000/api` and `VITE_USE_MOCK=false`, then `npm run dev` (port 8080 is already in `CORS_ALLOWED_ORIGINS`). Log in as `lecturer@northstar.edu` / `demo123` (Dr. Maya Chen). Seeded sheets: CSC301 submitted (locked), CSC305 approved (locked), CSC202 rejected (editable, one student), MTH301 is another department's, ECO201 draft is another lecturer's.
 
 ## 6. Frontend gaps found
 Resolved for the Super Admin in T1.1: former items 1-10 and 12 (generic template, Result Oversight, "Faculty admin" role, Registrations, Courses, Sessions and semesters, Activity log, header, grading scale panel, env vars).
@@ -166,7 +207,7 @@ Repo layout: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (
 **Phase 1: Frontend**
 - [x] T1.1 Super Admin screens, DONE and pushed (`154a098`).
 - [ ] T1.2 Student portal (now built against the REAL API, after the backend). Dashboard, profile (limited edit), course registration, my courses, results (approved only), academic history and CGPA, print registration summary and result statement. Commit: `feat(frontend): student portal`.
-- [ ] T1.3 Lecturer portal (against the real API). Dashboard, assigned courses, class list, result entry grid (draft/submit/lock, rejection feedback), submissions, course summary. Commit: `feat(frontend): lecturer portal`.
+- [~] T1.3 Lecturer portal. **DELIVERED (`uemp-frontend-lecturer.zip`): `tsc --noEmit` and `npm run build` pass, NOT yet exercised in a browser against the API (the sandbox has no PHP packages to run Laravel).** Files: `client/pages/lecturer/{index,Overview,Courses,ResultEntry,Submissions}.tsx`, edited `client/lib/api.ts` (new `api.lecturer.*`), `client/types/portal.ts` (lecturer types), `client/components/layout/DashboardShell.tsx` (lecturer role now renders `LecturerPages`; student still `RoleScreens`, dept still `AdminPages`). Commit: `feat(frontend): lecturer portal`.
 - [ ] T1.4 Dept Admin portal (against the real API). Students, lecturers, courses, assignments, levels/programs, registrations, result approvals (approve/reject with required feedback/return/reopen), reports; delete legacy `AdminScreens.tsx`. Commit: `feat(frontend): department admin portal`.
 - [ ] T1.5 RoleGuard, 401/403/422 handling (mostly done), responsive check, remove `RoleScreens.tsx`, print views. Commit: `refactor(frontend): guards, errors, structure`.
 
@@ -176,11 +217,11 @@ Repo layout: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (
 - [x] T2.3 Seeders DONE, verified on Neon and pushed. Commit: `feat(backend): seed data`.
 - [x] T2.4 DONE and pushed (`74a400b`): auth endpoints, role middleware, department scoping, AuditLogger, UserResource and paginated helper, CORS, 27 passing tests. (Other entities' camelCase Resources are written with their endpoints in T2.5 to T2.8.) Commit: `feat(backend): auth, rbac, audit`.
 - [x] T2.5 Super Admin APIs DONE and PUSHED (5a overview, 5b faculties/departments/programs/sessions/semesters, 5c courses and users, 5d read-only lists). Last commit: `feat(backend): super admin api (5d)`. `php artisan test` = 119 passed. 43 admin routes.
-- [~] T2.6 Dept Admin APIs. **6a+6b DELIVERED (`uemp-backend-6.zip`, NOT RUN: no PHP in the sandbox, the user must run `php artisan test`)**: dashboard, submissions list/show/results, approve/reject/reopen, scoped lists (students, lecturers, courses, registrations) and reports. **6c still to do**: course create/update/assign, student and lecturer edits, levels/programs. Commit: `feat(backend): dept admin api (6)`, later `(6c)`.
-- [ ] T2.7 Lecturer APIs and GradingService (configurable scale, credit-weighted GPA). Commit: `feat(backend): lecturer api and grading`.
-- [ ] T2.8 Student APIs and registration rules (eligibility, no duplicates, approved results only). Commit: `feat(backend): student api`.
-- [ ] T2.9 Feature tests for every business rule and permission boundary. Commit: `test(backend): rbac and workflow tests`.
-- [ ] T2.10 Deploy API (Railway or Render), run migrate --seed against Neon. Commit: `chore(backend): deployment config`.
+- [~] T2.6 Dept Admin APIs: 6a+6b DONE and pushed (`3ecc583`, 134 tests at the time). **6c NOT done** = a real spec gap: a dept admin cannot create/edit courses, assign lecturers, or create/edit students, lecturers, levels/programs (only the Super Admin can do courses and assignments; students and lecturers exist only as seed data). Minimal plan: `POST/PUT/DELETE /dept/courses` (department fixed to the admin's own, reuse `CourseRequest` and `CourseController` rules), `POST /dept/courses/{id}/assign {lecturerId}`, `POST/PUT /dept/students` and `/dept/lecturers`. Commit: `feat(backend): dept admin management (6c)`.
+- [x] T2.7 DONE, 155 tests passed (the user ran them). Commit: `feat(backend): lecturer api and grading`.
+- [x] T2.8 Student API DONE: `Tests: 165 passed (1314 assertions)`, pushed as `c350233 feat(backend): student api (T2.8)`. (Earlier commit `deceb42` with the message "student api" actually held the T2.7 lecturer files; history left as is.)
+- [~] T2.9 Mostly covered: every task shipped its own rule and permission tests. Optional extras if time: a cross-role matrix test.
+- [~] T2.10 Deploy API. Config is pushed and in the right places (repair commit `6f99bbf`): `render.yaml` at the repo ROOT, `backend/Dockerfile`, `backend/docker/entrypoint.sh`, `backend/.dockerignore`, `frontend/vercel.json`. **Still to do: the actual Render deploy** (steps in the T2.10 block of section 5). Docker build NOT tested yet (no Docker in the sandbox).
 
 **Phase 3: Integration and deploy**
 - [ ] T3.1 Switch frontend from mock to API. Commit: `feat: connect frontend to api`.
@@ -214,10 +255,39 @@ Live app URL | login URL + credentials per role | GitHub repo | technical docs |
 - Claude checks every batch in a sandbox before delivering: strict type-check for the frontend; for the backend, run `php artisan test` if the sandbox has PHP and Composer (check with `php -v`), otherwise only a syntax check, and then say clearly that the tests were not run.
 - **Security reminder:** never paste tokens, passwords or `.env` content into chat. The Neon password was exposed in chat once; reset it (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`) if not done yet.
 
-## 11. Next step when this chat resumes
-**Where we are: T2.5 pushed (119 tests). T2.6 (6a+6b) delivered in `uemp-backend-6.zip`, waiting for the user to install and run `php artisan test` (expect 134 passed), then push.**
-1. If tests fail, ask for the first failing lines only. Do not commit until green. Then: `git add -A`, `git status` (no `backend/.env`, no `*.txt` debug files), `git commit -m "feat(backend): dept admin api (6)"`, `git push`.
-2. **T2.6c** (only if time allows, it is the first thing to cut): `POST/PUT/DELETE /dept/courses` (department fixed to the admin's own, reuse `CourseRequest` rules and `CourseController` helpers), `POST /dept/courses/{id}/assign {lecturerId}`, student and lecturer edits, levels/programs. Ask for a fresh context file if the repo changed.
-3. **T2.7 lecturer API + GradingService** is more important than 6c: the workflow cannot be demoed without it (lecturer enters scores, saves draft, submits). Then T2.8 student API, T2.9 tests, T2.10 deploy. Update this handover after every task.
-4. Reminders: confirm the Neon password was reset; clean up the stray root `database/` and `.env.example` after comparing with `backend/database/seeders/`.
-5. Time check: deadline Thu 12 Nov, 11:55 PM WAT. Never cut: dept scoping, approval flow, registration rules, audit logs.
+## 11. Status snapshot and next steps (Wed 11 Nov)
+**Backend: 165 tests green, pushed (`c350233` student api, `6f99bbf` repo layout fix). Deployment config is in the repo but the API is NOT deployed yet. No new frontend screens built since T1.1.**
+
+### Tasks left: 15 open (12 must-do, 2 should-do, 1 optional)
+| # | Task | Priority |
+|---|---|---|
+| 1 | **T2.10** Deploy API on Render, check `/up` and a login | MUST (do first, blocks everything) |
+| 2 | **T1.3** Lecturer portal: DELIVERED, needs a browser test against the API, then push | MUST (verify) |
+| 3 | **T1.2** Student portal (profile, register courses, my courses, approved results, history/CGPA, print) | MUST |
+| 4 | **T1.4** Dept Admin portal (submissions list, approve / reject with feedback / reopen, lists, reports) | MUST |
+| 5 | **T3.1** Switch frontend from mock to the live API | MUST |
+| 6 | **T3.2** Test all 4 workflows end to end and forbidden endpoints with wrong roles | MUST |
+| 7 | **T3.3** Deploy frontend to Vercel (`frontend/vercel.json` exists), add the Vercel URL to `CORS_ALLOWED_ORIGINS` | MUST |
+| 8 | **T4.1** ER diagram exported to `docs/` (source `docs/database-schema.dbml`, use dbdiagram.io) | MUST |
+| 9 | **T4.2** Technical documentation (architecture, DB, permission logic, security, grading scale, decisions) | MUST |
+| 10 | **T4.3** README with setup, env vars, credentials for all four roles, live URLs | MUST |
+| 11 | **T4.4** Demo video 3-5 min | MUST |
+| 12 | **T4.5** Final checklist and submission message | MUST |
+| 13 | **T1.5** RoleGuard, 401/403/422 handling, responsive check, remove `RoleScreens.tsx` and `AdminScreens.tsx`, print views | SHOULD |
+| 14 | **T2.6c** Dept admin management actions (spec gap, see the T2.6 line) | SHOULD (after the screens work; if cut, say in the docs that management actions go through the Super Admin) |
+| 15 | **T2.9** Extra cross-role test matrix (each task already has its own rule tests) | OPTIONAL |
+
+Done so far: T0.1, T0.2a, T0.2b, T1.1, T2.1-T2.5, T2.6a+b, T2.7, T2.8 (22 of 37 listed tasks).
+
+### Suggested order and time (deadline Thu 12 Nov, 11:55 PM WAT)
+- Wed (today): finish T2.10 (about 30-60 min), then T1.3 and T1.2.
+- Wed night / Thu morning: T1.4, T3.1, T3.3, then T3.2 testing.
+- Thu afternoon: T2.6c minimal only if there is time, then T4.1-T4.3 docs, record T4.4, submit T4.5 by about 8 PM at the latest. Leave a 2-hour safety margin.
+
+### How to continue
+0. **Right now:** unpack `uemp-frontend-lecturer.zip` (from `frontend/`), run `npx tsc --noEmit`, test the lecturer screens against a local API (see the T1.3 block), commit `feat(frontend): lecturer portal`, push. Next screen: **T1.2 student**.
+1. Deploy on Render (New > Blueprint, pick the repo, fill `APP_KEY`, `APP_URL`, `DB_URL`, `CORS_ALLOWED_ORIGINS`). Check `https://<name>.onrender.com/up`, then `POST /api/login` with `superadmin@northstar.edu` / `demo123`. If the Docker build fails, send the last 30 lines of the build log.
+2. Before writing each screen, ask the user to attach a UTF-8 context file with `frontend/client/lib/api.ts`, `frontend/client/types/portal.ts`, `frontend/client/components/RoleScreens.tsx`, `frontend/client/components/AdminScreens.tsx`, `frontend/client/lib/navigation.ts`, `frontend/client/pages/admin/index.tsx` (made with `[System.IO.File]::WriteAllText`, never `Out-File`). Add the new types to `portal.ts`: lecturer (T2.7 block), student (T2.8 block), `DeptDashboard` (T2.6 block). Build against the real API contract in the blocks above.
+3. Deliver every batch as ONE zip, with explicit copy commands, and say from which folder to run them. Update this handover after every task.
+4. Reminders: confirm the Neon password was reset; a local `dist/` folder at the repo root is ignored build output and can be deleted.
+5. Never cut: dept scoping, approval flow, registration rules, audit logs.
