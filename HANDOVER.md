@@ -1,4 +1,4 @@
-# UEMP Assessment — Handover (v20, Wed 11 Nov 2026)
+# UEMP Assessment — Handover (v21, Wed 11 Nov 2026)
 
 Paste this whole file into a new chat to continue without losing context. Claude cannot push to GitHub from chat. The user runs all git commands and pastes the output back.
 
@@ -151,6 +151,17 @@ Paste this whole file into a new chat to continue without losing context. Claude
     - `GET /lecturer/submissions` -> same shape as the dept submissions (`SubmissionResource`, with `feedback` and `audit`), only this lecturer's own.
   - Not done: lecturer scores are not written by a "mark as not started" action; a lecturer cannot un-submit (the dept admin rejects or reopens).
 
+- **T2.7 CONFIRMED: `Tests: 155 passed (1205 assertions)`.**
+- **T2.8 DELIVERED (zip `uemp-backend-8.zip`), waiting for the user to unpack, run `php artisan test` (expect 165 passed), and push.** Files: `app/Http/Controllers/Api/Student/{StudentController (abstract base),StudentProfileController,StudentRegistrationController,StudentResultController}.php`, `routes/api.php` (full replacement, student group added), `tests/Feature/Student/StudentApiTest.php` (10 tests).
+  - **Routes** (all `role:student`; no student id in any URL or body, every query starts from `$request->user()->student`): `GET/PUT /api/student/profile`; `GET /available-courses`; `POST /registrations`; `GET /registrations`; `GET /results`; `GET /academic-history`.
+  - **Profile:** `GET` returns the `Student` shape plus `phone, address, dateOfBirth` (Y-m-d). `PUT` accepts ONLY `phone` (digits, + ( ) - and spaces), `address`, `dateOfBirth` (past date); any other field in the body is ignored (matric, level, department, status cannot change). Audit `PROFILE_UPDATED` (changed field names only).
+  - **Available courses:** `{data:[Course + registered:bool], meta, sessionName, semester}`: courses of the student's own department, program and level in the CURRENT semester name. Empty when there is no current semester.
+  - **Register** `POST /student/registrations` body `{courseIds:[..]}` returns 201 with the full `RegistrationRecord` (all courses of that semester's registration). Rules: dept, program, level and current semester must all match (422 keyed `courseIds.N`); a course already registered this semester is a friendly 422 on `courseIds.N` and nothing is added (whole request is atomic); more courses later go into the SAME registration row; graduated students and "no current semester" give 422. Audit `COURSE_REGISTERED` (entity = course codes, linked to the registration).
+  - **Registrations list:** `{data:[RegistrationRecord], meta}` newest semester first (use it for the print summary).
+  - **Results:** `{data:[{id, courseId, courseCode, courseTitle, units, sessionName, semester, caScore, examScore, totalScore, grade, gradePoint}], meta}`: APPROVED submissions only and only the student's own rows. A reopened result disappears again.
+  - **Academic history:** `{matricNo, studentName, departmentName, programName, level, cgpa, totalUnits, totalCourses, semesters:[{sessionName, semester, totalUnits, gpa, courses:[same row as results]}]}`, oldest semester first. `cgpa` and `gpa` come from `GradingService::gpa` (sum(point x units)/sum(units), 2 decimals) and are `null` when there are no approved results. The result statement print view can use this endpoint.
+  - Not built: no max-units rule and no registration deadline (not in the spec).
+
 ## 6. Frontend gaps found
 Resolved for the Super Admin in T1.1: former items 1-10 and 12 (generic template, Result Oversight, "Faculty admin" role, Registrations, Courses, Sessions and semesters, Activity log, header, grading scale panel, env vars).
 Still open: split/replace `RoleScreens.tsx` (student, lecturer) and `AdminScreens.tsx` (dept admin) per page (T1.2-T1.4), responsive check, print views (T1.5).
@@ -190,8 +201,8 @@ Repo layout: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (
 - [x] T2.4 DONE and pushed (`74a400b`): auth endpoints, role middleware, department scoping, AuditLogger, UserResource and paginated helper, CORS, 27 passing tests. (Other entities' camelCase Resources are written with their endpoints in T2.5 to T2.8.) Commit: `feat(backend): auth, rbac, audit`.
 - [x] T2.5 Super Admin APIs DONE and PUSHED (5a overview, 5b faculties/departments/programs/sessions/semesters, 5c courses and users, 5d read-only lists). Last commit: `feat(backend): super admin api (5d)`. `php artisan test` = 119 passed. 43 admin routes.
 - [~] T2.6 Dept Admin APIs. **6a+6b DELIVERED (`uemp-backend-6.zip`, NOT RUN: no PHP in the sandbox, the user must run `php artisan test`)**: dashboard, submissions list/show/results, approve/reject/reopen, scoped lists (students, lecturers, courses, registrations) and reports. **6c still to do**: course create/update/assign, student and lecturer edits, levels/programs. Commit: `feat(backend): dept admin api (6)`, later `(6c)`.
-- [~] T2.7 Lecturer APIs and GradingService. **DELIVERED (`uemp-backend-7.zip`), all files pass `php -l`, GradingService checked standalone, but `php artisan test` NOT run (no Composer packages in the sandbox): the user must run it.** Expected: 134 + 5 (GradingServiceTest) + 15 (LecturerApiTest) = **154 passed**. Commit: `feat(backend): lecturer api and grading`.
-- [ ] T2.8 Student APIs and registration rules (eligibility, no duplicates, approved results only). Commit: `feat(backend): student api`.
+- [x] T2.7 DONE, 155 tests passed (the user ran them). Commit: `feat(backend): lecturer api and grading`.
+- [~] T2.8 Student APIs and registration rules. **DELIVERED (`uemp-backend-8.zip`), files pass `php -l`, tests NOT run: the user must run `php artisan test` (expect 155 + 10 = 165).** Commit: `feat(backend): student api`.
 - [ ] T2.9 Feature tests for every business rule and permission boundary. Commit: `test(backend): rbac and workflow tests`.
 - [ ] T2.10 Deploy API (Railway or Render), run migrate --seed against Neon. Commit: `chore(backend): deployment config`.
 
@@ -228,8 +239,8 @@ Live app URL | login URL + credentials per role | GitHub repo | technical docs |
 - **Security reminder:** never paste tokens, passwords or `.env` content into chat. The Neon password was exposed in chat once; reset it (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`) if not done yet.
 
 ## 11. Next step when this chat resumes
-**Where we are: T2.6 pushed (134 tests). T2.7 delivered in `uemp-backend-7.zip`, waiting for the user to unpack and run `php artisan test` (expect 154 passed), then push.**
-1. If tests fail, ask for the first failing lines only. Do not commit until green. Then: `git add -A`, `git status` (no `backend/.env`, no `*.txt`), `git commit -m "feat(backend): lecturer api and grading"`, `git push`.
-2. **T2.8 student API** is next (profile, available courses, register with rules, registered courses, approved results only, academic history and CGPA via `GradingService::gpa`). Then T2.9 tests, T2.10 deploy, then the frontends (T1.2-T1.4) and T3.1. T2.6c is the first thing to cut.
-3. Reminders: confirm the Neon password was reset; clean up the stray root `database/`, `app/`, `tests/` folders and root `.env.example` after comparing with `backend/` (the repo root currently has `app`, `database`, `tests` folders that should not be there).
+**Where we are: T2.7 pushed (155 tests). T2.8 delivered in `uemp-backend-8.zip`, waiting for the user to unpack and run `php artisan test` (expect 165 passed), then push.**
+1. If tests fail, ask for the first failing lines only. Then `git add -A`, `git status`, `git commit -m "feat(backend): student api"`, `git push`.
+2. **Next: T2.10 deploy the API (Railway or Render) against Neon** so the frontends can be built and tested against a live URL; T2.9 is mostly covered already (each task shipped its own rule tests), so only add a few cross-role boundary tests if time allows. Then the frontends T1.2 (student), T1.3 (lecturer), T1.4 (dept admin) and T3.1/T3.3. T2.6c is the first thing to cut.
+3. Reminders: confirm the Neon password was reset; clean up the stray root `app/`, `database/`, `tests/` folders and root `.env.example` after comparing with `backend/`.
 4. Time check: deadline Thu 12 Nov, 11:55 PM WAT. Never cut: dept scoping, approval flow, registration rules, audit logs.

@@ -17,6 +17,9 @@ use App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController;
 use App\Http\Controllers\Api\Lecturer\LecturerCourseController;
 use App\Http\Controllers\Api\Lecturer\LecturerDashboardController;
 use App\Http\Controllers\Api\Lecturer\LecturerResultController;
+use App\Http\Controllers\Api\Student\StudentProfileController;
+use App\Http\Controllers\Api\Student\StudentRegistrationController;
+use App\Http\Controllers\Api\Student\StudentResultController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -99,5 +102,14 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/submissions', [LecturerResultController::class, 'submissions']);
     });
 
-    // T2.8: Route::prefix('student')->middleware('role:student')->group(...)
+    // ---------- Student (T2.8): every query starts from the signed-in student's own profile ----------
+    Route::prefix('student')->middleware('role:student')->group(function () {
+        Route::get('/profile', [StudentProfileController::class, 'show']);
+        Route::put('/profile', [StudentProfileController::class, 'update']);
+        Route::get('/available-courses', [StudentRegistrationController::class, 'available']);
+        Route::post('/registrations', [StudentRegistrationController::class, 'store']);
+        Route::get('/registrations', [StudentRegistrationController::class, 'index']);
+        Route::get('/results', [StudentResultController::class, 'index']);
+        Route::get('/academic-history', [StudentResultController::class, 'history']);
+    });
 });
