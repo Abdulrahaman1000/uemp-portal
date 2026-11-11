@@ -1,4 +1,4 @@
-# UEMP Assessment — Handover (v21, Wed 11 Nov 2026)
+# UEMP Assessment — Handover (v23, Wed 11 Nov 2026)
 
 Paste this whole file into a new chat to continue without losing context. Claude cannot push to GitHub from chat. The user runs all git commands and pastes the output back.
 
@@ -162,6 +162,14 @@ Paste this whole file into a new chat to continue without losing context. Claude
   - **Academic history:** `{matricNo, studentName, departmentName, programName, level, cgpa, totalUnits, totalCourses, semesters:[{sessionName, semester, totalUnits, gpa, courses:[same row as results]}]}`, oldest semester first. `cgpa` and `gpa` come from `GradingService::gpa` (sum(point x units)/sum(units), 2 decimals) and are `null` when there are no approved results. The result statement print view can use this endpoint.
   - Not built: no max-units rule and no registration deadline (not in the spec).
 
+- **T2.10 deployment config (Render, free Docker web service; Railway works with the same Dockerfile).**
+  - Container start (`entrypoint.sh`): binds Apache to `$PORT`; stops with a clear message if `APP_KEY` or `DB_URL` is empty; `php artisan migrate --force` (only creates missing tables); seeds ONLY when `RUN_SEED=true`; then `config:cache` (routes are not cached because `routes/web.php` has a closure). Health check path `/up`.
+  - **Environment variables** (Render asks for the `sync:false` ones): `APP_KEY` (from `php artisan key:generate --show`, run locally in `backend/`), `APP_URL` (the Render URL, `https://<name>.onrender.com`), `DB_URL` (Neon DIRECT string, the same one as in the local `backend/.env`; paste it only into the Render dashboard, never into chat), `CORS_ALLOWED_ORIGINS` (comma separated, start with `http://localhost:8080`, add the Vercel URL later). Preset in `render.yaml`: `APP_ENV=production`, `APP_DEBUG=false`, `DB_CONNECTION=pgsql`, `DB_SSLMODE=require`, `LOG_CHANNEL=stderr`, `SESSION_DRIVER=array`, `CACHE_STORE=file`, `QUEUE_CONNECTION=sync`, `SEED_PASSWORD=demo123`, `RUN_SEED=false`.
+  - Neon already holds the seeded demo data (from `migrate:fresh --seed`), so the first deploy needs `RUN_SEED=false`. To reset the demo data later set `RUN_SEED=true`, redeploy once, set it back to `false`. NEVER run `migrate:fresh` against the live database.
+  - Free Render services sleep after ~15 min and wake in ~30-60 s, and Neon also autosuspends: open `/up` and log in once a few minutes before any demo or the submission check.
+  - After deploy: frontend `VITE_API_URL=https://<name>.onrender.com/api`, `VITE_USE_MOCK=false`; the API base path is `/api`, so `/api/login`, `/api/me` etc.
+  - Frontend on Vercel: root directory `frontend`, framework Vite, build `npm run build`, output `dist`, env `VITE_API_URL` and `VITE_USE_MOCK=false`; `vercel.json` already has the SPA rewrite.
+
 ## 6. Frontend gaps found
 Resolved for the Super Admin in T1.1: former items 1-10 and 12 (generic template, Result Oversight, "Faculty admin" role, Registrations, Courses, Sessions and semesters, Activity log, header, grading scale panel, env vars).
 Still open: split/replace `RoleScreens.tsx` (student, lecturer) and `AdminScreens.tsx` (dept admin) per page (T1.2-T1.4), responsive check, print views (T1.5).
@@ -202,9 +210,9 @@ Repo layout: monorepo `uemp-portal/` with `frontend/` (Vite React), `backend/` (
 - [x] T2.5 Super Admin APIs DONE and PUSHED (5a overview, 5b faculties/departments/programs/sessions/semesters, 5c courses and users, 5d read-only lists). Last commit: `feat(backend): super admin api (5d)`. `php artisan test` = 119 passed. 43 admin routes.
 - [~] T2.6 Dept Admin APIs. **6a+6b DELIVERED (`uemp-backend-6.zip`, NOT RUN: no PHP in the sandbox, the user must run `php artisan test`)**: dashboard, submissions list/show/results, approve/reject/reopen, scoped lists (students, lecturers, courses, registrations) and reports. **6c still to do**: course create/update/assign, student and lecturer edits, levels/programs. Commit: `feat(backend): dept admin api (6)`, later `(6c)`.
 - [x] T2.7 DONE, 155 tests passed (the user ran them). Commit: `feat(backend): lecturer api and grading`.
-- [~] T2.8 Student APIs and registration rules. **DELIVERED (`uemp-backend-8.zip`), files pass `php -l`, tests NOT run: the user must run `php artisan test` (expect 155 + 10 = 165).** Commit: `feat(backend): student api`.
-- [ ] T2.9 Feature tests for every business rule and permission boundary. Commit: `test(backend): rbac and workflow tests`.
-- [ ] T2.10 Deploy API (Railway or Render), run migrate --seed against Neon. Commit: `chore(backend): deployment config`.
+- [x] T2.8 Student API DONE: `Tests: 165 passed (1314 assertions)`, pushed as `c350233 feat(backend): student api (T2.8)`. (Earlier commit `deceb42` with the message "student api" actually held the T2.7 lecturer files; history left as is.)
+- [~] T2.9 Mostly covered: every task shipped its own rule and permission tests. Optional extras if time: a cross-role matrix test.
+- [~] T2.10 Deploy API. Config is in the repo (`render.yaml` at the ROOT, `backend/Dockerfile`, `backend/docker/entrypoint.sh`, `backend/.dockerignore`, `frontend/vercel.json`) after the repair commit `fix: deployment files in the right folders` (the first push `4d6861f` put them in the wrong folders because the install block was run from `backend/` instead of the repo root; repaired). NOT yet deployed, Docker build NOT tested (no Docker in the sandbox).
 
 **Phase 3: Integration and deploy**
 - [ ] T3.1 Switch frontend from mock to API. Commit: `feat: connect frontend to api`.
@@ -239,8 +247,10 @@ Live app URL | login URL + credentials per role | GitHub repo | technical docs |
 - **Security reminder:** never paste tokens, passwords or `.env` content into chat. The Neon password was exposed in chat once; reset it (Neon > Roles > neondb_owner > Reset password, then update `DB_URL` in `backend/.env`) if not done yet.
 
 ## 11. Next step when this chat resumes
-**Where we are: T2.7 pushed (155 tests). T2.8 delivered in `uemp-backend-8.zip`, waiting for the user to unpack and run `php artisan test` (expect 165 passed), then push.**
-1. If tests fail, ask for the first failing lines only. Then `git add -A`, `git status`, `git commit -m "feat(backend): student api"`, `git push`.
-2. **Next: T2.10 deploy the API (Railway or Render) against Neon** so the frontends can be built and tested against a live URL; T2.9 is mostly covered already (each task shipped its own rule tests), so only add a few cross-role boundary tests if time allows. Then the frontends T1.2 (student), T1.3 (lecturer), T1.4 (dept admin) and T3.1/T3.3. T2.6c is the first thing to cut.
-3. Reminders: confirm the Neon password was reset; clean up the stray root `app/`, `database/`, `tests/` folders and root `.env.example` after comparing with `backend/`.
-4. Time check: deadline Thu 12 Nov, 11:55 PM WAT. Never cut: dept scoping, approval flow, registration rules, audit logs.
+**Where we are: backend 165 tests green and pushed. Open backend items: (a) deploy to Render and verify, (b) T2.6c = dept admin management actions (create/edit/assign courses, create/edit students and lecturers, levels/programs): a real spec gap, today only the Super Admin can create or edit courses and assign lecturers, and students/lecturers exist only as seed data. Frontends T1.2-T1.4 are not built.**
+1. Confirm the repair commit is pushed and the repo looks right: root has `render.yaml`, `HANDOVER.md`, `README.md`, `.gitignore`, `docs/`, `backend/`, `frontend/` only (no root `app/`, `database/`, `tests/`, `.env.example`; no `backend/backend/`).
+2. Deploy the API on Render (New > Blueprint, pick the repo, fill `APP_KEY`, `APP_URL`, `DB_URL`, `CORS_ALLOWED_ORIGINS`). Check `https://<name>.onrender.com/up`, then log in with curl or the browser: `POST /api/login` `superadmin@northstar.edu` / `demo123`. If the Docker build fails, send the last 30 lines of the Render build log.
+3. Frontends against the live API, in this order of value: **T1.3 lecturer (result entry grid)**, **T1.2 student (registration, results, CGPA, print)**, **T1.4 dept admin (approvals)**, then T3.1 connect, T3.3 Vercel. Types to add to `portal.ts`: lecturer dashboard/course/class-list/summary (see the T2.7 block), student profile/available course/results/history (T2.8 block), `DeptDashboard` (T2.6 block). Ask the user to attach `frontend/client/lib/api.ts`, `types/portal.ts`, `components/RoleScreens.tsx` and `components/AdminScreens.tsx` (made with the PowerShell context-file method, UTF-8) before writing the screens.
+4. Docs T4.1-T4.5 must start by Thu morning at the latest (README, ER diagram from `docs/database-schema.dbml`, technical doc, credentials, demo video).
+5. Reminder: confirm the Neon password was reset. (The stray root `app/`, `database/`, `tests/` folders and root `.env.example` were compared with `backend/` and removed in the repair commit.)
+6. Time check: deadline Thu 12 Nov, 11:55 PM WAT. Never cut: dept scoping, approval flow, registration rules, audit logs.
