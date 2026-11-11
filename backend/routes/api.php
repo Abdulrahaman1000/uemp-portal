@@ -65,3 +65,15 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // T2.7: Route::prefix('lecturer')->middleware('role:lecturer')->group(...)
     // T2.8: Route::prefix('student')->middleware('role:student')->group(...)
 });
+
+
+// T2.6: Dept Admin APIs
+Route::prefix('dept')->middleware('role:dept_admin')->group(function () {
+    Route::get('/dashboard', [\App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController::class, 'dashboard']);
+    Route::get('/submissions', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'index']);
+    Route::get('/submissions/{submission}', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'show']);
+    Route::post('/submissions/{submission}/approve', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'approve']);
+    Route::post('/submissions/{submission}/reject', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'reject']);
+    Route::post('/submissions/{submission}/reopen', [\App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController::class, 'reopen']);
+    Route::get('/reports/{type}', [\App\Http\Controllers\Api\DeptAdmin\DepartmentReportController::class, 'show']);
+});
