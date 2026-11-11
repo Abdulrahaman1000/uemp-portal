@@ -8,6 +8,8 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
+    # Neon is in us-east-2 (Ohio): keep the API in the same region so database round trips stay fast.
+    region: ohio
     healthCheckPath: /up
     envVars:
       - key: APP_NAME

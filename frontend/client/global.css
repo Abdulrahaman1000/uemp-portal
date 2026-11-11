@@ -127,3 +127,12 @@
     white-space: pre;
   }
 }
+
+/* Print views: content marked .print-only shows only on paper, .no-print only on screen. */
+.print-only { display: none; }
+@media print {
+  .print-only { display: block !important; }
+  .no-print { display: none !important; }
+  div[class*="lg:pl-"] { padding-left: 0 !important; }
+  @page { margin: 16mm; }
+}

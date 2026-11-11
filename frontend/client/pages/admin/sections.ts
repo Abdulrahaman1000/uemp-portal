@@ -1,3 +1,3 @@
-// One place for the admin section type. Once AdminScreens.tsx is deleted,
-// move the union itself here and drop this re-export.
-export type { AdminSection } from "../../components/AdminScreens";
+export type AdminSection =
+  | "overview" | "faculties" | "departments" | "programs" | "sessions" | "users" | "roles"
+  | "courses" | "registrations" | "oversight" | "reports" | "activity-log";

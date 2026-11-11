@@ -1,5 +1,5 @@
 import type {
-  AcademicSession, AdminDashboard, AuditLog, AuthSession, ClassSheet, Course, CourseSummary, Department,
+  AcademicHistory, AcademicSession, DeptCourseBody, DeptDashboard, DeptLecturerBody, DeptStudentBody, SubmissionScoreRow, AdminDashboard, AvailableCourses, ProfileUpdate, StudentProfile, StudentResultRow, AuditLog, AuthSession, ClassSheet, Course, CourseSummary, Department,
   Faculty, GradingScale, Lecturer, LecturerCourse, LecturerDashboard, LoginCredentials, PageMeta, Paginated,
   Program, RegistrationRecord, ResultSubmission, RolePermission, ScoreInput, Student, User, UserRole,
   UserStatus,
@@ -251,5 +251,49 @@ export const api = {
     summary: (courseId: string) => apiRequest<CourseSummary>(`/lecturer/courses/${courseId}/summary`),
     submissions: (params: ListParams = {}) =>
       apiRequest<Paginated<ResultSubmission>>(`/lecturer/submissions${toQuery(params)}`),
+  },
+
+  // Student: every call is scoped to the signed-in student by the server; no student id is ever sent.
+  student: {
+    profile: () => apiRequest<StudentProfile>("/student/profile"),
+    updateProfile: (body: ProfileUpdate) => apiRequest<StudentProfile>("/student/profile", { method: "PUT", body }),
+    availableCourses: () => apiRequest<AvailableCourses>("/student/available-courses"),
+    register: (courseIds: string[]) =>
+      apiRequest<RegistrationRecord>("/student/registrations", { method: "POST", body: { courseIds } }),
+    registrations: () => apiRequest<{ data: RegistrationRecord[]; meta: PageMeta }>("/student/registrations"),
+    results: () => apiRequest<{ data: StudentResultRow[]; meta: PageMeta }>("/student/results"),
+    history: () => apiRequest<AcademicHistory>("/student/academic-history"),
+  },
+
+  // Department admin: the server limits every call to the admin's own department.
+  dept: {
+    dashboard: () => apiRequest<DeptDashboard>("/dept/dashboard"),
+    submissions: (params: ListParams = {}) => apiRequest<Paginated<ResultSubmission>>(`/dept/submissions${toQuery(params)}`),
+    submission: (id: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}`),
+    submissionResults: (id: string) => apiRequest<{ data: SubmissionScoreRow[] }>(`/dept/submissions/${id}/results`),
+    approve: (id: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}/approve`, { method: "POST" }),
+    reject: (id: string, feedback: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}/reject`, { method: "POST", body: { feedback } }),
+    reopen: (id: string, feedback?: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}/reopen`, { method: "POST", body: { feedback: feedback || null } }),
+
+    students: (params: ListParams = {}) => apiRequest<Paginated<Student>>(`/dept/students${toQuery(params)}`),
+    createStudent: (body: DeptStudentBody) => apiRequest<Student>("/dept/students", { method: "POST", body }),
+    updateStudent: (id: string, body: DeptStudentBody) => apiRequest<Student>(`/dept/students/${id}`, { method: "PUT", body }),
+    setStudentStatus: (id: string, status: UserStatus) => apiRequest<Student>(`/dept/students/${id}/status`, { method: "PATCH", body: { status } }),
+
+    lecturers: (params: ListParams = {}) => apiRequest<Paginated<Lecturer>>(`/dept/lecturers${toQuery(params)}`),
+    createLecturer: (body: DeptLecturerBody) => apiRequest<Lecturer>("/dept/lecturers", { method: "POST", body }),
+    updateLecturer: (id: string, body: DeptLecturerBody) => apiRequest<Lecturer>(`/dept/lecturers/${id}`, { method: "PUT", body }),
+    setLecturerStatus: (id: string, status: UserStatus) => apiRequest<Lecturer>(`/dept/lecturers/${id}/status`, { method: "PATCH", body: { status } }),
+
+    courses: (params: ListParams = {}) => apiRequest<Paginated<Course>>(`/dept/courses${toQuery(params)}`),
+    createCourse: (body: DeptCourseBody) => apiRequest<Course>("/dept/courses", { method: "POST", body }),
+    updateCourse: (id: string, body: DeptCourseBody) => apiRequest<Course>(`/dept/courses/${id}`, { method: "PUT", body }),
+    deleteCourse: (id: string) => apiRequest<void>(`/dept/courses/${id}`, { method: "DELETE" }),
+    assignLecturer: (courseId: string, lecturerId: number | null) =>
+      apiRequest<Course>(`/dept/courses/${courseId}/assign`, { method: "POST", body: { lecturerId } }),
+
+    programs: (params: ListParams = {}) => apiRequest<Paginated<Program>>(`/dept/programs${toQuery(params)}`),
+    registrations: (params: ListParams = {}) => apiRequest<Paginated<RegistrationRecord>>(`/dept/registrations${toQuery(params)}`),
+    report: (type: ReportType) => apiRequest<ReportRow[]>(`/dept/reports/${type}`),
   },
 };

@@ -5,8 +5,9 @@ import { useAuth } from "../../lib/auth";
 import { menus, roleName, rolePath } from "../../lib/navigation";
 import type { UserRole } from "../../types/portal";
 import AdminPages, { type AdminSection } from "../../pages/admin";
+import DeptPages from "../../pages/dept";
 import LecturerPages from "../../pages/lecturer";
-import RoleScreens, { type RoleSection } from "../RoleScreens";
+import StudentPages from "../../pages/student";
 
 /** Sidebar, header and the page area for one signed-in role. */
 export default function DashboardShell({ role }: { role: UserRole }) {
@@ -67,11 +68,10 @@ export default function DashboardShell({ role }: { role: UserRole }) {
           <button title="Log out" aria-label="Log out" onClick={async () => { await logout(); navigate("/login"); }} className="rounded-lg p-2 text-[#9aa8bb] hover:bg-[#f3f6fc] hover:text-[#315ed0]"><LogOut size={17} /></button>
         </div>
       </header>
-      {role === "lecturer"
-        ? <LecturerPages section={section} />
-        : role === "student"
-          ? <RoleScreens role={role} section={section as RoleSection} onSectionChange={changeSection} hideNavigation />
-          : <AdminPages role={role === "super_admin" ? "super-admin" : "department"} section={section as AdminSection} onSectionChange={changeSection} hideNavigation />}
+      {role === "lecturer" ? <LecturerPages section={section} />
+        : role === "student" ? <StudentPages section={section} />
+        : role === "dept_admin" ? <DeptPages section={section} />
+        : <AdminPages section={section as AdminSection} onSectionChange={changeSection} />}
     </div>
   </div>;
 }

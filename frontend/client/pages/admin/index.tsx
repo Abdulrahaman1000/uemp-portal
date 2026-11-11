@@ -1,4 +1,3 @@
-import AdminScreens, { type AdminScreensProps } from "../../components/AdminScreens";
 import type { AdminSection } from "./sections";
 import ActivityLog from "./ActivityLog";
 import Courses from "./Courses";
@@ -15,31 +14,21 @@ import Users from "./Users";
 
 export type { AdminSection } from "./sections";
 
-/**
- * Routes an admin section to its page. Sections that have been migrated to the
- * API render here. Everything else still falls back to the legacy AdminScreens
- * so the app keeps working while pages are moved one at a time.
- */
-export default function AdminPages(props: AdminScreensProps) {
-  const { role = "department", section = "overview", onSectionChange } = props;
+/** Routes a super admin menu section to its page. All data comes from /api/admin/*. */
+export default function AdminPages({ section = "overview", onSectionChange }: { section?: string; onSectionChange?: (section: string) => void }) {
   const go = (next: AdminSection) => onSectionChange?.(next);
-
-  if (role === "super-admin") {
-    switch (section) {
-      case "overview": return <Overview go={go} />;
-      case "faculties": return <Faculties />;
-      case "departments": return <Departments />;
-      case "programs": return <Programs />;
-      case "sessions": return <Sessions />;
-      case "users": return <Users />;
-      case "roles": return <Roles />;
-      case "courses": return <Courses />;
-      case "registrations": return <Registrations />;
-      case "oversight": return <Oversight />;
-      case "reports": return <Reports />;
-      case "activity-log": return <ActivityLog />;
-      default: break;
-    }
+  switch (section) {
+    case "faculties": return <Faculties />;
+    case "departments": return <Departments />;
+    case "programs": return <Programs />;
+    case "sessions": return <Sessions />;
+    case "users": return <Users />;
+    case "roles": return <Roles />;
+    case "courses": return <Courses />;
+    case "registrations": return <Registrations />;
+    case "oversight": return <Oversight />;
+    case "reports": return <Reports />;
+    case "activity-log": return <ActivityLog />;
+    default: return <Overview go={go} />;
   }
-  return <AdminScreens {...props} />;
 }

@@ -300,3 +300,121 @@ export interface CourseSummary {
   passRate: number | null;
   gradeDistribution: Record<string, number>;
 }
+
+// ---------- Student (matches /api/student/*) ----------
+
+/** The signed-in student's own profile. Only phone, address and dateOfBirth can be edited. */
+export interface StudentProfile extends Student {
+  phone: string | null;
+  address: string | null;
+  /** YYYY-MM-DD */
+  dateOfBirth: string | null;
+}
+
+export interface ProfileUpdate {
+  phone: string | null;
+  address: string | null;
+  dateOfBirth: string | null;
+}
+
+export interface AvailableCourse extends Course {
+  registered: boolean;
+}
+
+export interface AvailableCourses {
+  data: AvailableCourse[];
+  meta: PageMeta;
+  sessionName: string;
+  semester: SemesterName | "";
+}
+
+/** One approved result of the signed-in student. */
+export interface StudentResultRow {
+  id: string;
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  units: number;
+  sessionName: string;
+  semester: SemesterName;
+  caScore: number | null;
+  examScore: number | null;
+  totalScore: number | null;
+  grade: string | null;
+  gradePoint: number | null;
+}
+
+export interface HistorySemester {
+  sessionName: string;
+  semester: SemesterName;
+  totalUnits: number;
+  gpa: number | null;
+  courses: StudentResultRow[];
+}
+
+export interface AcademicHistory {
+  matricNo: string;
+  studentName: string;
+  departmentName: string;
+  programName: string;
+  level: number;
+  cgpa: number | null;
+  totalUnits: number;
+  totalCourses: number;
+  semesters: HistorySemester[];
+}
+
+// ---------- Department admin (matches /api/dept/*) ----------
+
+export interface DeptDashboard {
+  departmentName: string;
+  totalStudents: number;
+  totalLecturers: number;
+  totalCourses: number;
+  activePrograms: number;
+  pendingSubmissions: number;
+  submissionsByStatus: Record<ResultStatus, number>;
+  currentSession: string;
+  currentSemester: SemesterName;
+}
+
+/** One student's scores inside a submission the department admin is reviewing. */
+export interface SubmissionScoreRow {
+  id: string;
+  studentId: string;
+  matricNo: string;
+  studentName: string;
+  caScore: number | null;
+  examScore: number | null;
+  totalScore: number | null;
+  grade: string | null;
+  gradePoint: number | null;
+}
+
+export interface DeptStudentBody {
+  name: string;
+  email: string;
+  matricNo?: string; // create only
+  password?: string; // create only
+  programId: number;
+  level: number;
+  phone?: string | null;
+}
+
+export interface DeptLecturerBody {
+  name: string;
+  email: string;
+  password?: string; // create only
+  specialization?: string | null;
+}
+
+export interface DeptCourseBody {
+  code: string;
+  title: string;
+  units: number;
+  level: number;
+  semester: SemesterName;
+  type: CourseType;
+  programId: number;
+  lecturerId?: number | null;
+}
