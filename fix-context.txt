@@ -1,0 +1,3569 @@
+
+=== backend\routes\api.php ===
+<?php
+
+use App\Http\Controllers\Api\Admin\CourseController;
+use App\Http\Controllers\Api\Admin\DepartmentController;
+use App\Http\Controllers\Api\Admin\FacultyController;
+use App\Http\Controllers\Api\Admin\OverviewController;
+use App\Http\Controllers\Api\Admin\OversightController;
+use App\Http\Controllers\Api\Admin\ProgramController;
+use App\Http\Controllers\Api\Admin\SemesterController;
+use App\Http\Controllers\Api\Admin\SessionController;
+use App\Http\Controllers\Api\Admin\UserController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentCourseController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentPeopleController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentListController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentReportController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController;
+use App\Http\Controllers\Api\Lecturer\LecturerCourseController;
+use App\Http\Controllers\Api\Lecturer\LecturerDashboardController;
+use App\Http\Controllers\Api\Lecturer\LecturerResultController;
+use App\Http\Controllers\Api\Student\StudentProfileController;
+use App\Http\Controllers\Api\Student\StudentRegistrationController;
+use App\Http\Controllers\Api\Student\StudentResultController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| UEMP API (all paths are prefixed with /api)
+|--------------------------------------------------------------------------
+| Authentication uses Sanctum bearer tokens only (no cookies, no CSRF).
+| Every protected route needs a valid token ("auth:sanctum") and an active
+| account ("active"). Role groups are added with the role middleware, e.g.
+| middleware('role:super_admin').
+*/
+
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+
+Route::middleware(['auth:sanctum', 'active'])->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/me', [AuthController::class, 'me']);
+
+    // ---------- Super Admin (T2.5) ----------
+    Route::prefix('admin')->middleware('role:super_admin')->group(function () {
+        // T2.5a: overview
+        Route::get('/dashboard', [OverviewController::class, 'dashboard']);
+        Route::get('/grading-scale', [OverviewController::class, 'gradingScale']);
+        Route::get('/roles', [OverviewController::class, 'roles']);
+        Route::get('/reports/{type}', [OverviewController::class, 'report'])
+            ->whereIn('type', ['students', 'registrations', 'results']);
+
+        // T2.5b: faculties, departments, programs, sessions and semesters
+        Route::apiResource('faculties', FacultyController::class)->parameters(['faculties' => 'faculty']);
+        Route::apiResource('departments', DepartmentController::class);
+        Route::apiResource('programs', ProgramController::class);
+        Route::apiResource('sessions', SessionController::class);
+        Route::post('/sessions/{session}/activate', [SessionController::class, 'activate']);
+        Route::apiResource('semesters', SemesterController::class);
+        Route::post('/semesters/{semester}/activate', [SemesterController::class, 'activate']);
+        // T2.5c: courses and users
+        Route::get('/courses', [CourseController::class, 'index']);
+        Route::post('/courses', [CourseController::class, 'store']);
+        Route::put('/courses/{course}', [CourseController::class, 'update']);
+        Route::delete('/courses/{course}', [CourseController::class, 'destroy']);
+        Route::get('/users', [UserController::class, 'index']);
+        Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
+        Route::patch('/users/{user}/role', [UserController::class, 'updateRole']);
+        // T2.5d: read-only lists
+        Route::get('/students', [OversightController::class, 'students']);
+        Route::get('/lecturers', [OversightController::class, 'lecturers']);
+        Route::get('/registrations', [OversightController::class, 'registrations']);
+        Route::get('/submissions', [OversightController::class, 'submissions']);
+        Route::get('/activity-logs', [OversightController::class, 'activityLogs']);
+    });
+
+    // ---------- Department Admin (T2.6): every query is limited to the admin's own department ----------
+    Route::prefix('dept')->middleware('role:dept_admin')->group(function () {
+        // T2.6a: dashboard and the result approval workflow
+        Route::get('/dashboard', [DepartmentDashboardController::class, 'dashboard']);
+        Route::get('/submissions', [DepartmentSubmissionController::class, 'index']);
+        Route::get('/submissions/{submission}', [DepartmentSubmissionController::class, 'show']);
+        Route::get('/submissions/{submission}/results', [DepartmentSubmissionController::class, 'results']);
+        Route::post('/submissions/{submission}/approve', [DepartmentSubmissionController::class, 'approve']);
+        Route::post('/submissions/{submission}/reject', [DepartmentSubmissionController::class, 'reject']);
+        Route::post('/submissions/{submission}/reopen', [DepartmentSubmissionController::class, 'reopen']);
+        // T2.6b: read-only lists and reports
+        Route::get('/students', [DepartmentListController::class, 'students']);
+        Route::get('/lecturers', [DepartmentListController::class, 'lecturers']);
+        Route::get('/courses', [DepartmentListController::class, 'courses']);
+        Route::get('/registrations', [DepartmentListController::class, 'registrations']);
+        Route::get('/reports/{type}', [DepartmentReportController::class, 'show'])
+            ->whereIn('type', ['students', 'registrations', 'results']);
+        // T2.6c: department management (department is always the admin's own)
+        Route::get('/programs', [DepartmentPeopleController::class, 'programs']);
+        Route::post('/courses', [DepartmentCourseController::class, 'store']);
+        Route::put('/courses/{course}', [DepartmentCourseController::class, 'update']);
+        Route::delete('/courses/{course}', [DepartmentCourseController::class, 'destroy']);
+        Route::post('/courses/{course}/assign', [DepartmentCourseController::class, 'assign']);
+        Route::post('/students', [DepartmentPeopleController::class, 'storeStudent']);
+        Route::put('/students/{student}', [DepartmentPeopleController::class, 'updateStudent']);
+        Route::patch('/students/{student}/status', [DepartmentPeopleController::class, 'studentStatus']);
+        Route::post('/lecturers', [DepartmentPeopleController::class, 'storeLecturer']);
+        Route::put('/lecturers/{lecturer}', [DepartmentPeopleController::class, 'updateLecturer']);
+        Route::patch('/lecturers/{lecturer}/status', [DepartmentPeopleController::class, 'lecturerStatus']);
+    });
+
+    // ---------- Lecturer (T2.7): only courses assigned to the lecturer in the current session ----------
+    Route::prefix('lecturer')->middleware('role:lecturer')->group(function () {
+        Route::get('/dashboard', [LecturerDashboardController::class, 'dashboard']);
+        Route::get('/courses', [LecturerCourseController::class, 'index']);
+        Route::get('/courses/{course}/students', [LecturerCourseController::class, 'students']);
+        Route::get('/courses/{course}/summary', [LecturerCourseController::class, 'summary']);
+        Route::put('/courses/{course}/results', [LecturerResultController::class, 'save']);
+        Route::post('/courses/{course}/results/submit', [LecturerResultController::class, 'submit']);
+        Route::get('/submissions', [LecturerResultController::class, 'submissions']);
+    });
+
+    // ---------- Student (T2.8): every query starts from the signed-in student's own profile ----------
+    Route::prefix('student')->middleware('role:student')->group(function () {
+        Route::get('/profile', [StudentProfileController::class, 'show']);
+        Route::put('/profile', [StudentProfileController::class, 'update']);
+        Route::get('/available-courses', [StudentRegistrationController::class, 'available']);
+        Route::post('/registrations', [StudentRegistrationController::class, 'store']);
+        Route::get('/registrations', [StudentRegistrationController::class, 'index']);
+        Route::get('/results', [StudentResultController::class, 'index']);
+        Route::get('/academic-history', [StudentResultController::class, 'history']);
+    });
+});
+
+=== backend\app\Http\Controllers\Api\Admin\UserController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\Admin;
+
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
+use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
+use App\Models\User;
+use App\Services\AuditLogger;
+use App\Support\ApiResponse;
+use App\Support\LikeSearch;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Super Admin: user accounts, status and roles (T2.5c).
+ * Student accounts cannot change role (they own academic records); roles that need a department
+ * or a lecturer profile are refused with a clear message instead of leaving a half-configured user.
+ */
+class UserController extends Controller
+{
+    private const WITH = ['department', 'student.department', 'lecturer.department'];
+
+    public function __construct(private readonly AuditLogger $audit)
+    {
+    }
+
+    /** GET /api/admin/users?search=&role=&status=&page=&per_page= */
+    public function index(Request $request): array
+    {
+        $query = User::query()->with(self::WITH)->orderBy('name');
+
+        LikeSearch::apply($query, ApiResponse::search($request), ['name', 'email']);
+
+        $role = $request->query('role');
+        if (is_string($role) && UserRole::tryFrom($role)) {
+            $query->where('role', $role);
+        }
+        $status = $request->query('status');
+        if (is_string($status) && UserStatus::tryFrom($status)) {
+            $query->where('status', $status);
+        }
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), UserResource::class);
+    }
+
+    /** PATCH /api/admin/users/{user}/status  body: {status} */
+    public function updateStatus(Request $request, User $user): UserResource
+    {
+        $data = $request->validate(['status' => ['required', Rule::in(UserStatus::values())]]);
+
+        if ($user->is($request->user())) {
+            throw ValidationException::withMessages(['status' => 'You cannot change your own status.']);
+        }
+
+        $status = UserStatus::from($data['status']);
+
+        if ($user->status !== $status) {
+            DB::transaction(function () use ($request, $user, $status) {
+                $user->update(['status' => $status]);
+
+                // A deactivated or suspended user is signed out everywhere straight away.
+                if ($status !== UserStatus::Active) {
+                    $user->tokens()->delete();
+                }
+
+                $this->audit->record($request->user(), 'USER_STATUS_CHANGED', $user->name, "Status set to {$status->value}", $user);
+            });
+        }
+
+        return new UserResource($user->fresh(self::WITH));
+    }
+
+    /** PATCH /api/admin/users/{user}/role  body: {role, departmentId?} */
+    public function updateRole(Request $request, User $user): UserResource
+    {
+        $data = $request->validate([
+            'role' => ['required', Rule::in(UserRole::values())],
+            'departmentId' => ['nullable', 'integer', 'exists:departments,id'],
+        ]);
+
+        if ($user->is($request->user())) {
+            throw ValidationException::withMessages(['role' => 'You cannot change your own role.']);
+        }
+
+        $from = $user->role;
+        $to = UserRole::from($data['role']);
+
+        if ($from === $to) {
+            return new UserResource($user->load(self::WITH));
+        }
+
+        if ($from === UserRole::Student || $to === UserRole::Student) {
+            throw ValidationException::withMessages([
+                'role' => 'Student accounts cannot be converted: student records are created and managed from the department pages.',
+            ]);
+        }
+
+        $user->loadMissing('lecturer');
+
+        if ($to === UserRole::Lecturer && ! $user->lecturer) {
+            throw ValidationException::withMessages(['role' => 'This user has no lecturer profile, so they cannot become a lecturer.']);
+        }
+
+        // Only department admins are scoped through users.department_id.
+        $departmentId = null;
+        if ($to === UserRole::DeptAdmin) {
+            $departmentId = isset($data['departmentId'])
+                ? (int) $data['departmentId']
+                : $user->lecturer?->department_id;
+
+            if (! $departmentId) {
+                throw ValidationException::withMessages(['departmentId' => 'Choose a department for the new department admin.']);
+            }
+        }
+
+        DB::transaction(function () use ($request, $user, $to, $departmentId) {
+            $user->update(['role' => $to, 'department_id' => $departmentId]);
+
+            $this->audit->record($request->user(), 'USER_ROLE_CHANGED', $user->name, "Role set to {$to->value}", $user);
+        });
+
+        return new UserResource($user->fresh(self::WITH));
+    }
+}
+
+=== backend\app\Http\Controllers\Api\Admin\ProgramController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\Admin;
+
+use App\Http\Controllers\Api\Admin\Concerns\ManagesRecords;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\ProgramRequest;
+use App\Http\Resources\ProgramResource;
+use App\Models\Program;
+use App\Services\AuditLogger;
+use App\Support\ApiResponse;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Validation\ValidationException;
+
+/** Super admin CRUD for programs. Optional filter: ?departmentId=. */
+class ProgramController extends Controller
+{
+    use ManagesRecords;
+
+    public function __construct(private AuditLogger $audit) {}
+
+    /** GET /api/admin/programs */
+    public function index(Request $request): array
+    {
+        $query = $this->applySearch(Program::query(), ApiResponse::search($request), ['name', 'award'])
+            ->with('department')
+            ->withCount('students')
+            ->when(ctype_digit((string) $request->query('departmentId')), fn ($q) => $q->where('department_id', (int) $request->query('departmentId')))
+            ->orderBy('name');
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), ProgramResource::class);
+    }
+
+    /** GET /api/admin/programs/{program} */
+    public function show(Program $program): ProgramResource
+    {
+        return new ProgramResource($program->load('department')->loadCount('students'));
+    }
+
+    /** POST /api/admin/programs */
+    public function store(ProgramRequest $request): JsonResponse
+    {
+        $program = Program::create($request->columns())->load('department');
+
+        $this->audit->record($request->user(), 'RECORD_CREATED', "Program: {$program->name}",
+            "Created program {$program->name} ({$program->award}) in {$program->department->name}", $program);
+
+        return (new ProgramResource($program->loadCount('students')))->response()->setStatusCode(201);
+    }
+
+    /** PUT /api/admin/programs/{program} */
+    public function update(ProgramRequest $request, Program $program): ProgramResource
+    {
+        $data = $request->columns();
+
+        // Students and courses are tied to the program's department, so it cannot move while they exist.
+        if ($data['department_id'] !== (int) $program->department_id
+            && ($program->students()->exists() || $program->courses()->exists())) {
+            throw ValidationException::withMessages([
+                'departmentId' => 'This program has students or courses, so it cannot be moved to another department.',
+            ]);
+        }
+
+        $changes = $this->applyUpdate($program, $data);
+        $program->load('department');
+
+        if ($changes !== []) {
+            $this->audit->record($request->user(), 'RECORD_UPDATED', "Program: {$program->name}",
+                'Updated program: '.implode(', ', array_keys($changes)), $program, ['changes' => $changes]);
+        }
+
+        return new ProgramResource($program->loadCount('students'));
+    }
+
+    /** DELETE /api/admin/programs/{program} */
+    public function destroy(Request $request, Program $program): Response|JsonResponse
+    {
+        $blocked = $this->blockedMessage($program->name, [
+            'student' => $program->students()->count(),
+            'course' => $program->courses()->count(),
+        ]);
+        if ($blocked) {
+            return ApiResponse::message($blocked, 422);
+        }
+
+        if ($failure = $this->deleteOrBlock($program, $program->name)) {
+            return $failure;
+        }
+
+        $this->audit->record($request->user(), 'RECORD_DELETED', "Program: {$program->name}",
+            "Deleted program {$program->name} ({$program->award})", null, ['id' => $program->id]);
+
+        return response()->noContent();
+    }
+}
+
+=== backend\app\Http\Resources\UserResource.php ===
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * Matches the frontend `User` type. Note the snake_case department_id and
+ * department_name: that is what portal.ts expects.
+ *
+ * @mixin \App\Models\User
+ */
+class UserResource extends JsonResource
+{
+    /** @return array<string, mixed> */
+    public function toArray(Request $request): array
+    {
+        $departmentId = $this->resolveDepartmentId();
+        $department = match ($this->role->value) {
+            'student' => $this->student?->department,
+            'lecturer' => $this->lecturer?->department,
+            'dept_admin' => $this->department,
+            default => null,
+        };
+
+        return array_filter([
+            'id' => (string) $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'role' => $this->role->value,
+            'department_id' => $departmentId !== null ? (string) $departmentId : null,
+            'department_name' => $department?->name,
+            'status' => $this->status->value,
+            'studentId' => $this->student ? (string) $this->student->id : null,
+            'lastActive' => $this->last_active_at?->toDateString(),
+        ], fn ($value, $key) => ! in_array($key, ['studentId', 'lastActive'], true) || $value !== null, ARRAY_FILTER_USE_BOTH);
+    }
+}
+
+=== backend\app\Http\Resources\ProgramResource.php ===
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/** @mixin \App\Models\Program */
+class ProgramResource extends JsonResource
+{
+    /** @return array<string, mixed> */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => (string) $this->id,
+            'name' => $this->name,
+            'award' => $this->award,
+            'departmentId' => (string) $this->department_id,
+            'departmentName' => $this->department->name,
+            'durationYears' => (int) $this->duration_years,
+            'studentCount' => (int) ($this->resource->getAttributeValue('students_count') ?? $this->students()->count()),
+        ];
+    }
+}
+
+=== backend\app\Models\User.php ===
+<?php
+
+namespace App\Models;
+
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+
+class User extends Authenticatable
+{
+    use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * Role, status and department are fillable for seeders and services only.
+     * Controllers must pass explicit validated fields, never $request->all().
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'role',
+        'status',
+        'department_id',
+        'last_active_at',
+    ];
+
+    /** @var list<string> */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'last_active_at' => 'datetime',
+            'password' => 'hashed',
+            'role' => UserRole::class,
+            'status' => UserStatus::class,
+        ];
+    }
+
+    /** Set for department admins (their scope). Students and lecturers use their profile's department. */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function student(): HasOne
+    {
+        return $this->hasOne(Student::class);
+    }
+
+    public function lecturer(): HasOne
+    {
+        return $this->hasOne(Lecturer::class);
+    }
+
+    public function hasRole(UserRole ...$roles): bool
+    {
+        return in_array($this->role, $roles, true);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === UserStatus::Active;
+    }
+
+    /**
+     * The department this user belongs to, whatever their role.
+     * Department admins use users.department_id; students and lecturers use their profile row.
+     */
+    public function resolveDepartmentId(): ?int
+    {
+        return match ($this->role) {
+            UserRole::Student => $this->student?->department_id,
+            UserRole::Lecturer => $this->lecturer?->department_id,
+            UserRole::DeptAdmin => $this->department_id,
+            default => null,
+        };
+    }
+}
+
+=== backend\app\Models\Lecturer.php ===
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Lecturer extends Model
+{
+    /** @var list<string> */
+    protected $fillable = ['user_id', 'department_id', 'staff_id', 'specialization', 'phone'];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(CourseAssignment::class);
+    }
+
+    public function resultSubmissions(): HasMany
+    {
+        return $this->hasMany(ResultSubmission::class);
+    }
+}
+
+=== backend\app\Models\Program.php ===
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Program extends Model
+{
+    /** @var list<string> */
+    protected $fillable = ['department_id', 'name', 'award', 'duration_years'];
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return ['duration_years' => 'integer'];
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class);
+    }
+
+    public function courses(): HasMany
+    {
+        return $this->hasMany(Course::class);
+    }
+}
+
+=== backend\app\Support\DepartmentScope.php ===
+<?php
+
+namespace App\Support;
+
+use App\Enums\UserRole;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+
+/**
+ * Department scoping for department admins. It fails closed: any role that is
+ * not super admin or dept admin (or a dept admin without a department) sees nothing.
+ */
+class DepartmentScope
+{
+    /** Restrict a query to the departments the user may see. */
+    public static function apply(Builder $query, User $user, string $column = 'department_id'): Builder
+    {
+        if ($user->role === UserRole::SuperAdmin) {
+            return $query;
+        }
+
+        if ($user->role === UserRole::DeptAdmin && $user->department_id) {
+            return $query->where($column, $user->department_id);
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    public static function canAccess(User $user, ?int $departmentId): bool
+    {
+        if ($user->role === UserRole::SuperAdmin) {
+            return true;
+        }
+
+        return $user->role === UserRole::DeptAdmin
+            && $user->department_id !== null
+            && $departmentId !== null
+            && (int) $user->department_id === (int) $departmentId;
+    }
+
+    /** Use on every single-record action. Aborts with 403 when the record is in another department. */
+    public static function authorize(User $user, ?int $departmentId): void
+    {
+        abort_unless(self::canAccess($user, $departmentId), 403, 'This record belongs to another department.');
+    }
+}
+
+=== backend\tests\Feature\Admin\UserAdminApiTest.php ===
+<?php
+
+namespace Tests\Feature\Admin;
+
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
+use Tests\Concerns\CreatesDemoData;
+use Tests\TestCase;
+
+class UserAdminApiTest extends TestCase
+{
+    use CreatesDemoData;
+
+    public function test_only_super_admins_can_use_the_user_endpoints(): void
+    {
+        $department = $this->makeDepartment();
+        $target = $this->makeStudent($department);
+
+        $this->getJson('/api/admin/users')->assertUnauthorized();
+
+        foreach ([$this->makeDeptAdmin($department), $this->makeLecturer($department), $this->makeStudent($department)] as $user) {
+            $this->getJson('/api/admin/users', $this->bearer($user))->assertForbidden();
+            $this->patchJson("/api/admin/users/{$target->id}/status", ['status' => 'suspended'], $this->bearer($user))->assertForbidden();
+            $this->patchJson("/api/admin/users/{$target->id}/role", ['role' => 'lecturer'], $this->bearer($user))->assertForbidden();
+        }
+
+        $this->assertSame(UserStatus::Active, $target->fresh()->status);
+    }
+
+    public function test_list_returns_users_and_supports_search_role_and_status_filters(): void
+    {
+        $department = $this->makeDepartment();
+        $admin = $this->makeSuperAdmin(['name' => 'Morgan Ellis']);
+        $lecturer = $this->makeLecturer($department, ['name' => 'Dr. Maya Chen']);
+        $this->makeStudent($department, ['name' => 'Ethan Okafor', 'status' => UserStatus::Suspended]);
+
+        $all = $this->getJson('/api/admin/users', $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonStructure(['data' => [['id', 'name', 'email', 'role', 'department_id', 'department_name', 'status']], 'meta' => ['current_page', 'last_page', 'total']]);
+        $this->assertIsString($all->json('data.0.id'));
+
+        $this->getJson('/api/admin/users?role=lecturer', $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.email', $lecturer->email)
+            ->assertJsonPath('data.0.department_name', 'Computer Science');
+
+        $this->getJson('/api/admin/users?status=suspended', $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.name', 'Ethan Okafor');
+
+        $this->getJson('/api/admin/users?search=maya', $this->bearer($admin))->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson('/api/admin/users?q=morgan', $this->bearer($admin))->assertOk()->assertJsonPath('meta.total', 1);
+    }
+
+    public function test_suspending_a_user_signs_them_out_and_is_audited(): void
+    {
+        $student = $this->makeStudent();
+        $student->createToken('device');
+        $admin = $this->makeSuperAdmin();
+
+        $this->patchJson("/api/admin/users/{$student->id}/status", ['status' => 'suspended'], $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('status', 'suspended')
+            ->assertJsonPath('role', 'student');
+
+        $this->assertSame(UserStatus::Suspended, $student->fresh()->status);
+        $this->assertSame(0, $student->tokens()->count());
+        $this->assertDatabaseHas('audit_logs', ['action' => 'USER_STATUS_CHANGED', 'entity' => $student->name, 'user_id' => $admin->id]);
+
+        $this->patchJson("/api/admin/users/{$student->id}/status", ['status' => 'active'], $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('status', 'active');
+    }
+
+    public function test_status_changes_are_validated_and_a_user_cannot_change_their_own(): void
+    {
+        $student = $this->makeStudent();
+        $admin = $this->makeSuperAdmin();
+
+        $this->patchJson("/api/admin/users/{$student->id}/status", ['status' => 'banned'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['status']);
+        $this->patchJson("/api/admin/users/{$admin->id}/status", ['status' => 'inactive'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['status']);
+        $this->patchJson('/api/admin/users/9999/status', ['status' => 'inactive'], $this->bearer($admin))->assertNotFound();
+
+        $this->assertSame(UserStatus::Active, $admin->fresh()->status);
+    }
+
+    public function test_a_lecturer_can_become_a_department_admin_of_their_department(): void
+    {
+        $department = $this->makeDepartment();
+        $lecturer = $this->makeLecturer($department);
+        $admin = $this->makeSuperAdmin();
+
+        $this->patchJson("/api/admin/users/{$lecturer->id}/role", ['role' => 'dept_admin'], $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('role', 'dept_admin')
+            ->assertJsonPath('department_id', (string) $department->id);
+
+        $this->assertSame(UserRole::DeptAdmin, $lecturer->fresh()->role);
+        $this->assertSame($department->id, $lecturer->fresh()->department_id);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'USER_ROLE_CHANGED', 'entity' => $lecturer->name]);
+    }
+
+    public function test_a_super_admin_needs_a_department_to_become_a_department_admin(): void
+    {
+        $department = $this->makeDepartment();
+        $other = $this->makeSuperAdmin();
+        $admin = $this->makeSuperAdmin();
+
+        $this->patchJson("/api/admin/users/{$other->id}/role", ['role' => 'dept_admin'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['departmentId']);
+        $this->assertSame(UserRole::SuperAdmin, $other->fresh()->role);
+
+        $this->patchJson("/api/admin/users/{$other->id}/role", ['role' => 'dept_admin', 'departmentId' => $department->id], $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('department_id', (string) $department->id);
+    }
+
+    public function test_a_department_admin_promoted_to_super_admin_loses_the_department_scope(): void
+    {
+        $deptAdmin = $this->makeDeptAdmin();
+        $admin = $this->makeSuperAdmin();
+
+        $this->patchJson("/api/admin/users/{$deptAdmin->id}/role", ['role' => 'super_admin'], $this->bearer($admin))
+            ->assertOk()
+            ->assertJsonPath('role', 'super_admin')
+            ->assertJsonPath('department_id', null);
+
+        $this->assertNull($deptAdmin->fresh()->department_id);
+    }
+
+    public function test_role_changes_that_would_leave_a_broken_account_are_refused(): void
+    {
+        $department = $this->makeDepartment();
+        $student = $this->makeStudent($department);
+        $deptAdmin = $this->makeDeptAdmin($department);
+        $admin = $this->makeSuperAdmin();
+
+        // Students own academic records, so they cannot change role, and nobody can become a student.
+        $this->patchJson("/api/admin/users/{$student->id}/role", ['role' => 'lecturer'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['role']);
+        $this->patchJson("/api/admin/users/{$deptAdmin->id}/role", ['role' => 'student'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['role']);
+
+        // No lecturer profile exists for a department admin who was never a lecturer.
+        $this->patchJson("/api/admin/users/{$deptAdmin->id}/role", ['role' => 'lecturer'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['role']);
+
+        // Invalid role names and changing your own role.
+        $this->patchJson("/api/admin/users/{$deptAdmin->id}/role", ['role' => 'principal'], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['role']);
+        $this->patchJson("/api/admin/users/{$admin->id}/role", ['role' => 'dept_admin', 'departmentId' => $department->id], $this->bearer($admin))
+            ->assertStatus(422)->assertJsonValidationErrors(['role']);
+
+        $this->assertSame(UserRole::Student, $student->fresh()->role);
+        $this->assertSame(UserRole::DeptAdmin, $deptAdmin->fresh()->role);
+        $this->assertSame(UserRole::SuperAdmin, $admin->fresh()->role);
+    }
+}
+
+=== backend\tests\Concerns\CreatesDemoData.php ===
+<?php
+
+namespace Tests\Concerns;
+
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
+use App\Models\Department;
+use App\Models\Faculty;
+use App\Models\Lecturer;
+use App\Models\Program;
+use App\Models\Student;
+use App\Models\User;
+
+/** Small builders so each test creates only what it needs. */
+trait CreatesDemoData
+{
+    protected function makeDepartment(string $code = 'CSC', string $name = 'Computer Science'): Department
+    {
+        $faculty = Faculty::firstOrCreate(['code' => 'SCI'], ['name' => 'Faculty of Science', 'dean' => 'Prof. Harris']);
+
+        return Department::firstOrCreate(
+            ['code' => $code],
+            ['faculty_id' => $faculty->id, 'name' => $name, 'head' => 'Head '.$code],
+        );
+    }
+
+    protected function makeUser(UserRole $role, array $attributes = []): User
+    {
+        static $n = 0;
+        $n++;
+
+        return User::create(array_merge([
+            'name' => ucfirst($role->value).' '.$n,
+            'email' => "{$role->value}{$n}@northstar.edu",
+            'password' => 'demo123',
+            'role' => $role,
+            'status' => UserStatus::Active,
+        ], $attributes));
+    }
+
+    protected function makeSuperAdmin(array $attributes = []): User
+    {
+        return $this->makeUser(UserRole::SuperAdmin, $attributes);
+    }
+
+    protected function makeDeptAdmin(?Department $department = null, array $attributes = []): User
+    {
+        $department ??= $this->makeDepartment();
+
+        return $this->makeUser(UserRole::DeptAdmin, array_merge(['department_id' => $department->id], $attributes));
+    }
+
+    protected function makeLecturer(?Department $department = null, array $attributes = []): User
+    {
+        $department ??= $this->makeDepartment();
+        $user = $this->makeUser(UserRole::Lecturer, $attributes);
+        Lecturer::create(['user_id' => $user->id, 'department_id' => $department->id, 'specialization' => 'Algorithms']);
+
+        return $user;
+    }
+
+    protected function makeStudent(?Department $department = null, array $attributes = []): User
+    {
+        $department ??= $this->makeDepartment();
+        $user = $this->makeUser(UserRole::Student, $attributes);
+        $program = Program::firstOrCreate(['department_id' => $department->id, 'name' => $department->name], ['award' => 'B.Sc.', 'duration_years' => 4]);
+        Student::create([
+            'user_id' => $user->id,
+            'matric_no' => $department->code.'/2023/'.str_pad((string) $user->id, 3, '0', STR_PAD_LEFT),
+            'department_id' => $department->id,
+            'program_id' => $program->id,
+            'level' => 300,
+        ]);
+
+        return $user;
+    }
+
+    /** @return array<string, string> */
+    protected function bearer(User $user): array
+    {
+        // The test client keeps the first authenticated user cached between requests.
+        // Forgetting the guards makes every request authenticate from its own token.
+        $this->app['auth']->forgetGuards();
+
+        return ['Authorization' => 'Bearer '.$user->createToken('test')->plainTextToken, 'Accept' => 'application/json'];
+    }
+}
+
+=== frontend\client\lib\api.ts ===
+import type {
+  AcademicHistory, AcademicSession, DeptCourseBody, DeptDashboard, DeptLecturerBody, DeptStudentBody, SubmissionScoreRow, AdminDashboard, AvailableCourses, ProfileUpdate, StudentProfile, StudentResultRow, AuditLog, AuthSession, ClassSheet, Course, CourseSummary, Department,
+  Faculty, GradingScale, Lecturer, LecturerCourse, LecturerDashboard, LoginCredentials, PageMeta, Paginated,
+  Program, RegistrationRecord, ResultSubmission, RolePermission, ScoreInput, Student, User, UserRole,
+  UserStatus,
+} from "../types/portal";
+import { MockApiError, mockRequest } from "./mock";
+
+/** Vite exposes only VITE_ variables. VITE_API_URL is the Laravel API base URL. */
+const env = import.meta.env;
+export const API_URL = String(env.VITE_API_URL || "").trim().replace(/\/+$/, "");
+const mockSetting = env.VITE_USE_MOCK;
+/** An explicit true/false override wins; otherwise an empty API URL enables mock mode. */
+export const USE_MOCK = mockSetting == null || mockSetting === ""
+  ? !API_URL
+  : ["true", "1"].includes(String(mockSetting).toLowerCase());
+
+export const AUTH_STORAGE_KEY = "uemp.session";
+const SESSION_EVENT = "uemp:session-change";
+const ROLES: UserRole[] = ["student", "lecturer", "dept_admin", "super_admin"];
+const STATUSES: UserStatus[] = ["active", "inactive", "suspended"];
+
+let memorySession: AuthSession | null = null;
+let memoryOnly = false;
+
+export function isSession(value: unknown): value is AuthSession {
+  if (!value || typeof value !== "object") return false;
+  const session = value as AuthSession;
+  const user = session.user;
+  return typeof session.token === "string" && !!session.token.trim() && !!user && typeof user === "object" &&
+    typeof user.id === "string" && !!user.id.trim() && typeof user.name === "string" &&
+    typeof user.email === "string" && ROLES.includes(user.role) &&
+    (user.department_id === null || typeof user.department_id === "string") &&
+    (user.department_name === null || typeof user.department_name === "string") &&
+    STATUSES.includes(user.status) &&
+    (user.studentId === undefined || typeof user.studentId === "string") &&
+    (user.avatarUrl === undefined || typeof user.avatarUrl === "string");
+}
+
+/** Reads the current session, including sessions changed by another tab. */
+export function getSession(): AuthSession | null {
+  if (typeof window === "undefined" || memoryOnly) return memorySession;
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  } catch {
+    // Storage may be disabled; the in-memory session still works for this page.
+    return memorySession;
+  }
+  if (!raw) return (memorySession = null);
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return (memorySession = isSession(parsed) ? parsed : null);
+  } catch {
+    return (memorySession = null);
+  }
+}
+
+export function setSession(session: AuthSession | null): void {
+  if (session !== null && !isSession(session)) throw new Error("Invalid authentication session");
+  memorySession = session;
+  if (typeof window === "undefined") return;
+  try {
+    if (session) window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    else window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    memoryOnly = false;
+  } catch {
+    // Keep the in-memory session when storage is unavailable.
+    memoryOnly = true;
+  }
+  window.dispatchEvent(new Event(SESSION_EVENT));
+}
+
+export function getToken(): string | null {
+  return getSession()?.token ?? null;
+}
+
+/** Subscribe to both same-tab and cross-tab session changes. */
+export function subscribeToSession(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === AUTH_STORAGE_KEY || event.key === null) {
+      memoryOnly = false;
+      listener();
+    }
+  };
+  window.addEventListener(SESSION_EVENT, listener);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(SESSION_EVENT, listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/** Field errors from a Laravel 422 response: { errors: { field: ["message"] } }. */
+export type FieldErrors = Record<string, string[]>;
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string, public details?: unknown) {
+    super(message);
+    this.name = "ApiError";
+  }
+  get isUnauthorized(): boolean { return this.status === 401; }
+  get isForbidden(): boolean { return this.status === 403; }
+  get isValidation(): boolean { return this.status === 422; }
+  /** Per-field messages for a 422 response, or an empty object. */
+  get fieldErrors(): FieldErrors {
+    const errors = (this.details as { errors?: unknown } | undefined)?.errors;
+    return errors && typeof errors === "object" ? (errors as FieldErrors) : {};
+  }
+}
+
+export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
+  /** JSON-serializable request body. */
+  body?: unknown;
+  /** Override the stored token; pass null for an unauthenticated request. */
+  token?: string | null;
+}
+
+/** Generic JSON request. A 401 clears the matching session; a 403 keeps it. */
+export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const { body, token: tokenOverride, ...init } = options;
+  const token = tokenOverride === undefined ? getToken() : tokenOverride;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const clearExpiredSession = (status: number) => {
+    // Do not erase a newer login if an older request completes late.
+    if (status === 401 && token && getToken() === token) setSession(null);
+  };
+
+  if (USE_MOCK) {
+    try {
+      return mockRequest(normalizedPath, { method: init.method, token, body }) as T;
+    } catch (error) {
+      if (error instanceof MockApiError) {
+        clearExpiredSession(error.status);
+        throw new ApiError(error.status, error.message);
+      }
+      throw error;
+    }
+  }
+  if (!API_URL) throw new ApiError(0, "API URL is not configured and mock mode is disabled");
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
+  if (body !== undefined && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${normalizedPath}`, {
+      ...init,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, "Cannot reach the server. Check your connection and try again.");
+  }
+  const text = await response.text();
+  let data: unknown;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = text; }
+  }
+  if (!response.ok) {
+    clearExpiredSession(response.status);
+    const message = typeof data === "object" && data !== null && "message" in data && typeof data.message === "string"
+      ? data.message : typeof data === "string" && data ? data : response.statusText || `Request failed (${response.status})`;
+    throw new ApiError(response.status, message, data);
+  }
+  return data as T;
+}
+
+/** Builds a query string, skipping empty values. */
+export function toQuery(params: Record<string, string | number | undefined | null> = {}): string {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
+  });
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+export type ListParams = Record<string, string | number | undefined | null>;
+export type AdminResource = "faculties" | "departments" | "programs" | "courses" | "sessions";
+export interface ReportRow { label: string; value: number }
+export type ReportType = "students" | "registrations" | "results";
+export type AdminSubmissionStatus = ResultSubmission["status"];
+
+interface AdminListTypes {
+  faculties: Faculty;
+  departments: Department;
+  programs: Program;
+  courses: Course;
+  sessions: AcademicSession;
+}
+
+/** Real backend contract: paths are relative to API_URL and responses are unwrapped JSON. */
+export const api = {
+  login: async (credentials: LoginCredentials): Promise<AuthSession> => {
+    const session = await apiRequest<unknown>("/login", { method: "POST", body: credentials, token: null });
+    if (!isSession(session)) throw new ApiError(0, "Invalid authentication response", session);
+    return session;
+  },
+  logout: () => apiRequest<void>("/logout", { method: "POST" }),
+  me: () => apiRequest<User>("/me"),
+
+  admin: {
+    dashboard: () => apiRequest<AdminDashboard>("/admin/dashboard"),
+    gradingScale: () => apiRequest<GradingScale>("/admin/grading-scale"),
+    roles: () => apiRequest<RolePermission[]>("/admin/roles"),
+
+    // Collections managed by the super admin.
+    list: <R extends AdminResource>(resource: R, params: ListParams = {}) =>
+      apiRequest<Paginated<AdminListTypes[R]>>(`/admin/${resource}${toQuery(params)}`),
+    create: <R extends AdminResource>(resource: R, body: Partial<AdminListTypes[R]>) =>
+      apiRequest<AdminListTypes[R]>(`/admin/${resource}`, { method: "POST", body }),
+    update: <R extends AdminResource>(resource: R, id: string, body: Partial<AdminListTypes[R]>) =>
+      apiRequest<AdminListTypes[R]>(`/admin/${resource}/${id}`, { method: "PUT", body }),
+    remove: (resource: AdminResource, id: string) =>
+      apiRequest<void>(`/admin/${resource}/${id}`, { method: "DELETE" }),
+
+    // Sessions and semesters: only one is current at a time.
+    activateSession: (id: string) => apiRequest<AcademicSession>(`/admin/sessions/${id}/activate`, { method: "POST" }),
+    activateSemester: (id: string) => apiRequest<unknown>(`/admin/semesters/${id}/activate`, { method: "POST" }),
+
+    // Users.
+    users: (params: ListParams = {}) => apiRequest<Paginated<User>>(`/admin/users${toQuery(params)}`),
+    setUserStatus: (id: string, status: UserStatus) =>
+      apiRequest<User>(`/admin/users/${id}/status`, { method: "PATCH", body: { status } }),
+    setUserRole: (id: string, role: UserRole) =>
+      apiRequest<User>(`/admin/users/${id}/role`, { method: "PATCH", body: { role } }),
+
+    // Read-only oversight.
+    students: (params: ListParams = {}) => apiRequest<Paginated<Student>>(`/admin/students${toQuery(params)}`),
+    lecturers: (params: ListParams = {}) => apiRequest<Paginated<Lecturer>>(`/admin/lecturers${toQuery(params)}`),
+    registrations: (params: ListParams = {}) =>
+      apiRequest<Paginated<RegistrationRecord>>(`/admin/registrations${toQuery(params)}`),
+    submissions: (params: ListParams = {}) =>
+      apiRequest<Paginated<ResultSubmission>>(`/admin/submissions${toQuery(params)}`),
+    activityLogs: (params: ListParams = {}) =>
+      apiRequest<Paginated<AuditLog>>(`/admin/activity-logs${toQuery(params)}`),
+    report: (type: ReportType) => apiRequest<ReportRow[]>(`/admin/reports/${type}`),
+  },
+
+  // Lecturer: only the courses assigned to the signed-in lecturer in the current session.
+  lecturer: {
+    dashboard: () => apiRequest<LecturerDashboard>("/lecturer/dashboard"),
+    courses: () => apiRequest<{ data: LecturerCourse[]; meta: PageMeta }>("/lecturer/courses"),
+    students: (courseId: string) => apiRequest<ClassSheet>(`/lecturer/courses/${courseId}/students`),
+    saveResults: (courseId: string, scores: ScoreInput[]) =>
+      apiRequest<ClassSheet>(`/lecturer/courses/${courseId}/results`, { method: "PUT", body: { scores } }),
+    submitResults: (courseId: string) =>
+      apiRequest<ClassSheet>(`/lecturer/courses/${courseId}/results/submit`, { method: "POST" }),
+    summary: (courseId: string) => apiRequest<CourseSummary>(`/lecturer/courses/${courseId}/summary`),
+    submissions: (params: ListParams = {}) =>
+      apiRequest<Paginated<ResultSubmission>>(`/lecturer/submissions${toQuery(params)}`),
+  },
+
+  // Student: every call is scoped to the signed-in student by the server; no student id is ever sent.
+  student: {
+    profile: () => apiRequest<StudentProfile>("/student/profile"),
+    updateProfile: (body: ProfileUpdate) => apiRequest<StudentProfile>("/student/profile", { method: "PUT", body }),
+    availableCourses: () => apiRequest<AvailableCourses>("/student/available-courses"),
+    register: (courseIds: string[]) =>
+      apiRequest<RegistrationRecord>("/student/registrations", { method: "POST", body: { courseIds } }),
+    registrations: () => apiRequest<{ data: RegistrationRecord[]; meta: PageMeta }>("/student/registrations"),
+    results: () => apiRequest<{ data: StudentResultRow[]; meta: PageMeta }>("/student/results"),
+    history: () => apiRequest<AcademicHistory>("/student/academic-history"),
+  },
+
+  // Department admin: the server limits every call to the admin's own department.
+  dept: {
+    dashboard: () => apiRequest<DeptDashboard>("/dept/dashboard"),
+    submissions: (params: ListParams = {}) => apiRequest<Paginated<ResultSubmission>>(`/dept/submissions${toQuery(params)}`),
+    submission: (id: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}`),
+    submissionResults: (id: string) => apiRequest<{ data: SubmissionScoreRow[] }>(`/dept/submissions/${id}/results`),
+    approve: (id: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}/approve`, { method: "POST" }),
+    reject: (id: string, feedback: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}/reject`, { method: "POST", body: { feedback } }),
+    reopen: (id: string, feedback?: string) => apiRequest<ResultSubmission>(`/dept/submissions/${id}/reopen`, { method: "POST", body: { feedback: feedback || null } }),
+
+    students: (params: ListParams = {}) => apiRequest<Paginated<Student>>(`/dept/students${toQuery(params)}`),
+    createStudent: (body: DeptStudentBody) => apiRequest<Student>("/dept/students", { method: "POST", body }),
+    updateStudent: (id: string, body: DeptStudentBody) => apiRequest<Student>(`/dept/students/${id}`, { method: "PUT", body }),
+    setStudentStatus: (id: string, status: UserStatus) => apiRequest<Student>(`/dept/students/${id}/status`, { method: "PATCH", body: { status } }),
+
+    lecturers: (params: ListParams = {}) => apiRequest<Paginated<Lecturer>>(`/dept/lecturers${toQuery(params)}`),
+    createLecturer: (body: DeptLecturerBody) => apiRequest<Lecturer>("/dept/lecturers", { method: "POST", body }),
+    updateLecturer: (id: string, body: DeptLecturerBody) => apiRequest<Lecturer>(`/dept/lecturers/${id}`, { method: "PUT", body }),
+    setLecturerStatus: (id: string, status: UserStatus) => apiRequest<Lecturer>(`/dept/lecturers/${id}/status`, { method: "PATCH", body: { status } }),
+
+    courses: (params: ListParams = {}) => apiRequest<Paginated<Course>>(`/dept/courses${toQuery(params)}`),
+    createCourse: (body: DeptCourseBody) => apiRequest<Course>("/dept/courses", { method: "POST", body }),
+    updateCourse: (id: string, body: DeptCourseBody) => apiRequest<Course>(`/dept/courses/${id}`, { method: "PUT", body }),
+    deleteCourse: (id: string) => apiRequest<void>(`/dept/courses/${id}`, { method: "DELETE" }),
+    assignLecturer: (courseId: string, lecturerId: number | null) =>
+      apiRequest<Course>(`/dept/courses/${courseId}/assign`, { method: "POST", body: { lecturerId } }),
+
+    programs: (params: ListParams = {}) => apiRequest<Paginated<Program>>(`/dept/programs${toQuery(params)}`),
+    registrations: (params: ListParams = {}) => apiRequest<Paginated<RegistrationRecord>>(`/dept/registrations${toQuery(params)}`),
+    report: (type: ReportType) => apiRequest<ReportRow[]>(`/dept/reports/${type}`),
+  },
+};
+
+=== frontend\client\types\portal.ts ===
+// Shared types for the UEMP frontend. They mirror the Laravel API contract.
+
+export type UserRole = "student" | "lecturer" | "dept_admin" | "super_admin";
+export type UserStatus = "active" | "inactive" | "suspended";
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  department_id: string | null;
+  department_name: string | null;
+  status: UserStatus;
+  avatarUrl?: string;
+  /** Present for student accounts and used to scope student records. */
+  studentId?: string;
+  lastActive?: string;
+}
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface AuthSession {
+  token: string;
+  user: User;
+}
+
+/** List responses from the API: { data, meta }. */
+export interface PageMeta {
+  current_page: number;
+  last_page: number;
+  total: number;
+}
+export interface Paginated<T> {
+  data: T[];
+  meta: PageMeta;
+}
+
+// ---------- Academic structure ----------
+
+export interface Faculty {
+  id: string;
+  name: string;
+  code: string;
+  dean: string;
+  departmentCount: number;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  code: string;
+  facultyId: string;
+  facultyName: string;
+  head: string;
+  programCount: number;
+}
+
+export interface Program {
+  id: string;
+  name: string;
+  award: string; // e.g. B.Sc.
+  departmentId: string;
+  departmentName: string;
+  durationYears: number;
+  studentCount: number;
+}
+
+export type SemesterName = "First" | "Second";
+
+export interface Semester {
+  id: string;
+  sessionId: string;
+  name: SemesterName;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+}
+
+export interface AcademicSession {
+  id: string;
+  name: string; // e.g. 2026/2027
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+  semesters: Semester[];
+}
+
+// ---------- People ----------
+
+export type StudentStatus = "active" | "inactive" | "suspended" | "graduated";
+
+export interface Student {
+  id: string;
+  matricNo: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  departmentName: string;
+  facultyName: string;
+  programId: string;
+  programName: string;
+  level: number; // 100, 200, ...
+  status: StudentStatus;
+}
+
+export interface Lecturer {
+  id: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  departmentName: string;
+  specialization: string;
+  courseCount: number;
+  status: UserStatus;
+}
+
+// ---------- Courses and registration ----------
+
+export type CourseType = "core" | "elective";
+
+export interface Course {
+  id: string;
+  code: string;
+  title: string;
+  units: number;
+  level: number;
+  semester: SemesterName;
+  type: CourseType;
+  departmentId: string;
+  departmentName: string;
+  programId: string;
+  lecturerId: string | null;
+  lecturerName: string | null;
+}
+
+export interface RegisteredCourse {
+  courseId: string;
+  code: string;
+  title: string;
+  units: number;
+}
+
+export interface RegistrationRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  matricNo: string;
+  departmentName: string;
+  level: number;
+  sessionName: string;
+  semester: SemesterName;
+  courses: RegisteredCourse[];
+  totalUnits: number;
+  registeredAt: string;
+}
+
+// ---------- Results ----------
+
+export type ResultStatus = "draft" | "submitted" | "approved" | "rejected" | "reopened";
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actorName: string;
+  actorRole: UserRole;
+  action: string;
+  note?: string;
+}
+
+export interface ResultSubmission {
+  id: string;
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  departmentId: string;
+  departmentName: string;
+  lecturerName: string;
+  sessionName: string;
+  semester: SemesterName;
+  studentCount: number;
+  status: ResultStatus;
+  submittedAt: string | null;
+  feedback?: string;
+  audit: AuditEntry[];
+}
+
+export interface GradeBand {
+  min: number;
+  max: number;
+  grade: string;
+  point: number;
+}
+
+export interface GradingScale {
+  caMax: number;
+  examMax: number;
+  bands: GradeBand[];
+  gpaFormula: string;
+}
+
+// ---------- Administration ----------
+
+export interface RolePermission {
+  role: UserRole;
+  label: string;
+  description: string;
+  userCount: number;
+  permissions: string[];
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  userName: string;
+  role: UserRole;
+  action: string;
+  entity: string;
+  details: string;
+  ip: string;
+}
+
+export interface AdminDashboard {
+  totalStudents: number;
+  totalLecturers: number;
+  totalFaculties: number;
+  totalDepartments: number;
+  activePrograms: number;
+  pendingSubmissions: number;
+  currentSession: string;
+  currentSemester: SemesterName;
+}
+
+// ---------- Lecturer (matches /api/lecturer/*) ----------
+
+export interface LecturerDashboard {
+  lecturerName: string;
+  departmentName: string;
+  assignedCourses: number;
+  totalStudents: number;
+  /** Assigned courses of the current semester that have no result sheet yet. */
+  notStarted: number;
+  submissionsByStatus: Record<ResultStatus, number>;
+  currentSession: string;
+  currentSemester: SemesterName;
+}
+
+export interface LecturerCourse extends Course {
+  studentCount: number;
+  submissionStatus: ResultStatus;
+  feedback: string | null;
+}
+
+export interface ClassRow {
+  studentId: string;
+  matricNo: string;
+  studentName: string;
+  level: number;
+  caScore: number | null;
+  examScore: number | null;
+  totalScore: number | null;
+  grade: string | null;
+  gradePoint: number | null;
+}
+
+/** The class list of one course with its scores, status and the grading limits. */
+export interface ClassSheet {
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  units: number;
+  sessionName: string;
+  semester: SemesterName;
+  status: ResultStatus;
+  feedback: string | null;
+  canEdit: boolean;
+  caMax: number;
+  examMax: number;
+  students: ClassRow[];
+}
+
+export interface ScoreInput {
+  studentId: string;
+  caScore: number | null;
+  examScore: number | null;
+}
+
+export interface CourseSummary {
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  status: ResultStatus;
+  totalStudents: number;
+  scoredStudents: number;
+  average: number | null;
+  highest: number | null;
+  lowest: number | null;
+  passRate: number | null;
+  gradeDistribution: Record<string, number>;
+}
+
+// ---------- Student (matches /api/student/*) ----------
+
+/** The signed-in student's own profile. Only phone, address and dateOfBirth can be edited. */
+export interface StudentProfile extends Student {
+  phone: string | null;
+  address: string | null;
+  /** YYYY-MM-DD */
+  dateOfBirth: string | null;
+}
+
+export interface ProfileUpdate {
+  phone: string | null;
+  address: string | null;
+  dateOfBirth: string | null;
+}
+
+export interface AvailableCourse extends Course {
+  registered: boolean;
+}
+
+export interface AvailableCourses {
+  data: AvailableCourse[];
+  meta: PageMeta;
+  sessionName: string;
+  semester: SemesterName | "";
+}
+
+/** One approved result of the signed-in student. */
+export interface StudentResultRow {
+  id: string;
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  units: number;
+  sessionName: string;
+  semester: SemesterName;
+  caScore: number | null;
+  examScore: number | null;
+  totalScore: number | null;
+  grade: string | null;
+  gradePoint: number | null;
+}
+
+export interface HistorySemester {
+  sessionName: string;
+  semester: SemesterName;
+  totalUnits: number;
+  gpa: number | null;
+  courses: StudentResultRow[];
+}
+
+export interface AcademicHistory {
+  matricNo: string;
+  studentName: string;
+  departmentName: string;
+  programName: string;
+  level: number;
+  cgpa: number | null;
+  totalUnits: number;
+  totalCourses: number;
+  semesters: HistorySemester[];
+}
+
+// ---------- Department admin (matches /api/dept/*) ----------
+
+export interface DeptDashboard {
+  departmentName: string;
+  totalStudents: number;
+  totalLecturers: number;
+  totalCourses: number;
+  activePrograms: number;
+  pendingSubmissions: number;
+  submissionsByStatus: Record<ResultStatus, number>;
+  currentSession: string;
+  currentSemester: SemesterName;
+}
+
+/** One student's scores inside a submission the department admin is reviewing. */
+export interface SubmissionScoreRow {
+  id: string;
+  studentId: string;
+  matricNo: string;
+  studentName: string;
+  caScore: number | null;
+  examScore: number | null;
+  totalScore: number | null;
+  grade: string | null;
+  gradePoint: number | null;
+}
+
+export interface DeptStudentBody {
+  name: string;
+  email: string;
+  matricNo?: string; // create only
+  password?: string; // create only
+  programId: number;
+  level: number;
+  phone?: string | null;
+}
+
+export interface DeptLecturerBody {
+  name: string;
+  email: string;
+  password?: string; // create only
+  specialization?: string | null;
+}
+
+export interface DeptCourseBody {
+  code: string;
+  title: string;
+  units: number;
+  level: number;
+  semester: SemesterName;
+  type: CourseType;
+  programId: number;
+  lecturerId?: number | null;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\AdminRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use App\Enums\UserRole;
+use Illuminate\Foundation\Http\FormRequest;
+
+/**
+ * Base for super admin write requests.
+ * - The route group already requires role:super_admin; authorize() repeats the check (defence in depth).
+ * - Input keys are camelCase, so validation errors come back under camelCase keys,
+ *   which is what the frontend forms read.
+ */
+abstract class AdminRequest extends FormRequest
+{
+    /** Input keys whose text is trimmed before validation. @var list<string> */
+    protected array $trim = [];
+
+    public function authorize(): bool
+    {
+        return $this->user()?->role === UserRole::SuperAdmin;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $clean = [];
+
+        foreach ($this->trim as $key) {
+            $value = $this->input($key);
+
+            if (is_string($value)) {
+                $value = trim($value);
+                // Optional text fields arrive as null or "". Both mean "not set".
+                $clean[$key] = $value === '' ? null : $value;
+            }
+        }
+
+        $this->merge($clean);
+    }
+
+    /** Id sent by the frontend as a string, as an integer for queries (null when not numeric). */
+    protected function idInput(string $key): ?int
+    {
+        $value = $this->input($key);
+
+        return is_int($value) || (is_string($value) && ctype_digit($value)) ? (int) $value : null;
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\CourseRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use App\Enums\CourseType;
+use App\Enums\SemesterName;
+use App\Models\Lecturer;
+use App\Models\Program;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+/**
+ * Create and update a course. Input keys are camelCase (what the frontend sends), so the
+ * validation errors come back under the same camelCase keys.
+ * Access is already limited to super admins by the route group.
+ */
+class CourseRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('code'))) {
+            // "csc 301" and "CSC301" are the same course code.
+            $this->merge(['code' => strtoupper(preg_replace('/\s+/', '', trim($this->input('code'))))]);
+        }
+        if (is_string($this->input('title'))) {
+            $this->merge(['title' => trim($this->input('title'))]);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        $course = $this->route('course');
+
+        return [
+            'code' => ['required', 'string', 'max:12', Rule::unique('courses', 'code')->ignore($course?->id)],
+            'title' => ['required', 'string', 'max:255'],
+            'units' => ['required', 'integer', 'between:1,6'],
+            'level' => ['required', 'integer', Rule::in([100, 200, 300, 400, 500, 600])],
+            'semester' => ['required', Rule::in(SemesterName::values())],
+            'type' => ['required', Rule::in(CourseType::values())],
+            'departmentId' => ['required', 'integer', 'exists:departments,id'],
+            'programId' => ['required', 'integer', 'exists:programs,id'],
+            'lecturerId' => ['nullable', 'integer', 'exists:lecturers,id'],
+        ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            if ($validator->errors()->hasAny(['departmentId', 'programId', 'lecturerId'])) {
+                return;
+            }
+
+            $departmentId = $this->integer('departmentId');
+
+            $programInDepartment = Program::whereKey($this->integer('programId'))
+                ->where('department_id', $departmentId)->exists();
+            if (! $programInDepartment) {
+                $validator->errors()->add('programId', 'The selected program does not belong to the selected department.');
+            }
+
+            if ($this->filled('lecturerId')) {
+                $lecturerInDepartment = Lecturer::whereKey($this->integer('lecturerId'))
+                    ->where('department_id', $departmentId)->exists();
+                if (! $lecturerInDepartment) {
+                    $validator->errors()->add('lecturerId', 'The lecturer must belong to the same department as the course.');
+                }
+            }
+        });
+    }
+
+    /** The course columns, mapped from the camelCase input. @return array<string, mixed> */
+    public function courseAttributes(): array
+    {
+        return [
+            'code' => $this->validated('code'),
+            'title' => $this->validated('title'),
+            'units' => (int) $this->validated('units'),
+            'level' => (int) $this->validated('level'),
+            'semester' => $this->validated('semester'),
+            'type' => $this->validated('type'),
+            'department_id' => (int) $this->validated('departmentId'),
+            'program_id' => (int) $this->validated('programId'),
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\DepartmentRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use App\Rules\UniqueIgnoringCase;
+use Illuminate\Validation\Rule;
+
+class DepartmentRequest extends AdminRequest
+{
+    protected array $trim = ['name', 'code', 'head'];
+
+    protected function prepareForValidation(): void
+    {
+        parent::prepareForValidation();
+
+        if (is_string($this->input('code'))) {
+            $this->merge(['code' => mb_strtoupper($this->input('code'))]);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        $id = $this->route('department')?->getKey();
+        $facultyId = $this->idInput('facultyId');
+
+        // The name only has to be unique inside its faculty.
+        $nameRules = ['required', 'string', 'max:255'];
+        if ($facultyId !== null) {
+            $nameRules[] = new UniqueIgnoringCase('departments', 'name', 'This faculty already has a department with this name.', $id, ['faculty_id' => $facultyId]);
+        }
+
+        return [
+            'facultyId' => ['required', 'integer', Rule::exists('faculties', 'id')],
+            'name' => $nameRules,
+            'code' => ['required', 'string', 'max:10', Rule::unique('departments', 'code')->ignore($id)],
+            'head' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'facultyId.required' => 'Choose a faculty.',
+            'facultyId.integer' => 'Choose a valid faculty.',
+            'facultyId.exists' => 'The selected faculty does not exist.',
+            'code.unique' => 'A department with this code already exists.',
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function columns(): array
+    {
+        $data = $this->validated();
+
+        return [
+            'faculty_id' => (int) $data['facultyId'],
+            'name' => $data['name'],
+            'code' => $data['code'],
+            'head' => $data['head'] ?? null,
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\FacultyRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use App\Rules\UniqueIgnoringCase;
+use Illuminate\Validation\Rule;
+
+class FacultyRequest extends AdminRequest
+{
+    protected array $trim = ['name', 'code', 'dean'];
+
+    protected function prepareForValidation(): void
+    {
+        parent::prepareForValidation();
+
+        if (is_string($this->input('code'))) {
+            $this->merge(['code' => mb_strtoupper($this->input('code'))]);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        $id = $this->route('faculty')?->getKey();
+
+        return [
+            'name' => ['required', 'string', 'max:255', new UniqueIgnoringCase('faculties', 'name', 'A faculty with this name already exists.', $id)],
+            'code' => ['required', 'string', 'max:10', Rule::unique('faculties', 'code')->ignore($id)],
+            'dean' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return ['code.unique' => 'A faculty with this code already exists.'];
+    }
+
+    /** @return array<string, mixed> columns for the model */
+    public function columns(): array
+    {
+        $data = $this->validated();
+
+        return ['name' => $data['name'], 'code' => $data['code'], 'dean' => $data['dean'] ?? null];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\ProgramRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use App\Rules\UniqueIgnoringCase;
+use Illuminate\Validation\Rule;
+
+class ProgramRequest extends AdminRequest
+{
+    protected array $trim = ['name', 'award'];
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        $id = $this->route('program')?->getKey();
+        $departmentId = $this->idInput('departmentId');
+
+        $nameRules = ['required', 'string', 'max:255'];
+        if ($departmentId !== null) {
+            $nameRules[] = new UniqueIgnoringCase('programs', 'name', 'This department already has a program with this name.', $id, ['department_id' => $departmentId]);
+        }
+
+        return [
+            'departmentId' => ['required', 'integer', Rule::exists('departments', 'id')],
+            'name' => $nameRules,
+            'award' => ['required', 'string', 'max:20'],
+            'durationYears' => ['required', 'integer', 'between:1,7'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'departmentId.required' => 'Choose a department.',
+            'departmentId.integer' => 'Choose a valid department.',
+            'departmentId.exists' => 'The selected department does not exist.',
+            'durationYears.between' => 'The duration must be between 1 and 7 years.',
+            'durationYears.integer' => 'The duration must be a whole number of years.',
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function columns(): array
+    {
+        $data = $this->validated();
+
+        return [
+            'department_id' => (int) $data['departmentId'],
+            'name' => $data['name'],
+            'award' => $data['award'],
+            'duration_years' => (int) $data['durationYears'],
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\SemesterRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use App\Enums\SemesterName;
+use App\Models\AcademicSession;
+use App\Models\Semester;
+use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
+
+/** Create or update one semester: {sessionId, name, startDate, endDate}. */
+class SemesterRequest extends AdminRequest
+{
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        return [
+            'sessionId' => ['required', 'integer', Rule::exists('academic_sessions', 'id')],
+            'name' => ['required', Rule::in(SemesterName::values())],
+            'startDate' => ['required', 'date_format:Y-m-d'],
+            'endDate' => ['required', 'date_format:Y-m-d'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'sessionId.required' => 'Choose a session.',
+            'sessionId.integer' => 'Choose a valid session.',
+            'sessionId.exists' => 'The selected session does not exist.',
+            'name.in' => 'The semester must be First or Second.',
+            'startDate.date_format' => 'Use a valid start date (YYYY-MM-DD).',
+            'endDate.date_format' => 'Use a valid end date (YYYY-MM-DD).',
+        ];
+    }
+
+    /** @return list<callable> */
+    public function after(): array
+    {
+        return [function (Validator $validator) {
+            $errors = $validator->errors();
+            $current = $this->route('semester');
+
+            if ($errors->has('sessionId') || $errors->has('name')) {
+                return;
+            }
+
+            if ($current && (int) $this->input('sessionId') !== (int) $current->academic_session_id) {
+                $validator->errors()->add('sessionId', 'A semester cannot be moved to another session.');
+
+                return;
+            }
+
+            $session = AcademicSession::find((int) $this->input('sessionId'));
+
+            $duplicate = Semester::where('academic_session_id', $session->id)
+                ->where('name', $this->input('name'))
+                ->when($current, fn ($q) => $q->where('id', '!=', $current->id))
+                ->exists();
+
+            if ($duplicate) {
+                $validator->errors()->add('name', 'This session already has a '.$this->input('name').' semester.');
+            }
+
+            if ($errors->has('startDate') || $errors->has('endDate')) {
+                return;
+            }
+
+            $start = Carbon::createFromFormat('Y-m-d', $this->input('startDate'))->startOfDay();
+            $end = Carbon::createFromFormat('Y-m-d', $this->input('endDate'))->startOfDay();
+
+            if ($end->lte($start)) {
+                $validator->errors()->add('endDate', 'The end date must be after the start date.');
+
+                return;
+            }
+
+            if ($start->lt($session->start_date) || $end->gt($session->end_date)) {
+                $validator->errors()->add('startDate', "The semester must fall inside the session ({$session->start_date->toDateString()} to {$session->end_date->toDateString()}).");
+
+                return;
+            }
+
+            $overlaps = Semester::where('academic_session_id', $session->id)
+                ->when($current, fn ($q) => $q->where('id', '!=', $current->id))
+                ->whereDate('start_date', '<=', $end->toDateString())
+                ->whereDate('end_date', '>=', $start->toDateString())
+                ->exists();
+
+            if ($overlaps) {
+                $validator->errors()->add('startDate', 'These dates overlap another semester of the same session.');
+            }
+        }];
+    }
+
+    /** @return array<string, mixed> */
+    public function columns(): array
+    {
+        $data = $this->validated();
+
+        return [
+            'academic_session_id' => (int) $data['sessionId'],
+            'name' => $data['name'],
+            'start_date' => $data['startDate'],
+            'end_date' => $data['endDate'],
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Admin\SessionRequest.php ===
+<?php
+
+namespace App\Http\Requests\Admin;
+
+use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
+
+/**
+ * Create or update an academic session: {name, startDate, endDate}.
+ * Creating one also creates its First and Second semesters (see SessionController).
+ */
+class SessionRequest extends AdminRequest
+{
+    /** A session shorter than this cannot hold two semesters. */
+    public const MIN_MONTHS = 6;
+
+    protected array $trim = ['name'];
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        $id = $this->route('session')?->getKey();
+
+        return [
+            'name' => [
+                'required', 'string', 'max:20',
+                'regex:/^\d{4}\/\d{4}$/',
+                Rule::unique('academic_sessions', 'name')->ignore($id),
+            ],
+            'startDate' => ['required', 'date_format:Y-m-d'],
+            'endDate' => ['required', 'date_format:Y-m-d'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'name.regex' => 'Use the format 2027/2028 for the session name.',
+            'name.unique' => 'This session already exists.',
+            'startDate.date_format' => 'Use a valid start date (YYYY-MM-DD).',
+            'endDate.date_format' => 'Use a valid end date (YYYY-MM-DD).',
+        ];
+    }
+
+    /** @return list<callable> */
+    public function after(): array
+    {
+        return [function (Validator $validator) {
+            $errors = $validator->errors();
+
+            // Name: the second year must follow the first (2027/2028, not 2027/2030).
+            if (! $errors->has('name') && preg_match('#^(\d{4})/(\d{4})$#', (string) $this->input('name'), $m)
+                && (int) $m[2] !== (int) $m[1] + 1) {
+                $validator->errors()->add('name', 'The second year must follow the first, for example 2027/2028.');
+            }
+
+            if ($errors->has('startDate') || $errors->has('endDate')) {
+                return;
+            }
+
+            $start = Carbon::createFromFormat('Y-m-d', $this->input('startDate'))->startOfDay();
+            $end = Carbon::createFromFormat('Y-m-d', $this->input('endDate'))->startOfDay();
+
+            if ($end->lt($start->copy()->addMonths(self::MIN_MONTHS))) {
+                $validator->errors()->add('endDate', 'A session must run for at least '.self::MIN_MONTHS.' months after its start date.');
+
+                return;
+            }
+
+            // When editing, the new dates must still contain the semesters already created.
+            $session = $this->route('session');
+            if ($session) {
+                $outside = $session->semesters()
+                    ->where(fn ($q) => $q->whereDate('start_date', '<', $start->toDateString())->orWhereDate('end_date', '>', $end->toDateString()))
+                    ->exists();
+
+                if ($outside) {
+                    $validator->errors()->add('startDate', 'The new dates must still cover all semesters of this session. Edit the semesters first.');
+                }
+            }
+        }];
+    }
+
+    /** @return array<string, mixed> */
+    public function columns(): array
+    {
+        $data = $this->validated();
+
+        return ['name' => $data['name'], 'start_date' => $data['startDate'], 'end_date' => $data['endDate']];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\DeptAdmin\DeptCourseRequest.php ===
+<?php
+
+namespace App\Http\Requests\DeptAdmin;
+
+use App\Http\Requests\Admin\CourseRequest;
+use App\Support\DepartmentScope;
+
+/**
+ * Same rules as the super admin CourseRequest, but the department is NOT taken from the
+ * request: it is always the department admin's own. A course of another department is a 403.
+ */
+class DeptCourseRequest extends CourseRequest
+{
+    public function authorize(): bool
+    {
+        $user = $this->user();
+        $departmentId = $user?->resolveDepartmentId();
+        if ($departmentId === null) {
+            return false;
+        }
+        $course = $this->route('course');
+
+        return $course === null || DepartmentScope::canAccess($user, $course->department_id);
+    }
+
+    protected function prepareForValidation(): void
+    {
+        parent::prepareForValidation();
+        // Any departmentId in the body is overwritten.
+        $this->merge(['departmentId' => $this->user()?->resolveDepartmentId()]);
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Requests\Lecturer\SaveScoresRequest.php ===
+<?php
+
+namespace App\Http\Requests\Lecturer;
+
+use App\Services\GradingService;
+use Illuminate\Foundation\Http\FormRequest;
+
+/**
+ * Body: { scores: [ { studentId, caScore, examScore }, ... ] }
+ * A score may be null (not entered yet). The maximums come from config/grading.php.
+ */
+class SaveScoresRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        $grading = app(GradingService::class);
+
+        return [
+            'scores' => ['required', 'array', 'min:1', 'max:1000'],
+            'scores.*.studentId' => ['required', 'integer', 'distinct'],
+            'scores.*.caScore' => ['nullable', 'numeric', 'min:0', 'max:'.$grading->caMax(), 'decimal:0,2'],
+            'scores.*.examScore' => ['nullable', 'numeric', 'min:0', 'max:'.$grading->examMax(), 'decimal:0,2'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        $grading = app(GradingService::class);
+
+        return [
+            'scores.*.caScore.max' => 'CA score cannot be more than '.$grading->caMax().'.',
+            'scores.*.examScore.max' => 'Exam score cannot be more than '.$grading->examMax().'.',
+            'scores.*.caScore.min' => 'CA score cannot be negative.',
+            'scores.*.examScore.min' => 'Exam score cannot be negative.',
+            'scores.*.caScore.numeric' => 'CA score must be a number.',
+            'scores.*.examScore.numeric' => 'Exam score must be a number.',
+            'scores.*.caScore.decimal' => 'CA score can have at most 2 decimal places.',
+            'scores.*.examScore.decimal' => 'Exam score can have at most 2 decimal places.',
+            'scores.*.studentId.distinct' => 'The same student appears twice.',
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DepartmentCourseController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Http\Controllers\Api\Admin\CourseController as AdminCourseController;
+use App\Http\Requests\DeptAdmin\DeptCourseRequest;
+use App\Http\Resources\CourseResource;
+use App\Models\Course;
+use App\Support\DepartmentScope;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+
+/**
+ * Department admin: manage the courses of their own department and assign lecturers.
+ * The rules (unique code, locked fields once records exist, one lecturer per session, audit log)
+ * live in the super admin CourseController and are reused here; this class only adds the
+ * department restriction.
+ */
+class DepartmentCourseController extends DeptAdminController
+{
+    public function __construct(private readonly AdminCourseController $courses)
+    {
+    }
+
+    /** POST /api/dept/courses */
+    public function store(DeptCourseRequest $request): JsonResponse
+    {
+        return $this->courses->store($request);
+    }
+
+    /** PUT /api/dept/courses/{course} */
+    public function update(DeptCourseRequest $request, Course $course): CourseResource
+    {
+        return $this->courses->update($request, $course);
+    }
+
+    /** DELETE /api/dept/courses/{course} */
+    public function destroy(Request $request, Course $course): Response
+    {
+        DepartmentScope::authorize($request->user(), $course->department_id);
+
+        return $this->courses->destroy($request, $course);
+    }
+
+    /** POST /api/dept/courses/{course}/assign  body: { lecturerId: id | null } */
+    public function assign(Request $request, Course $course): CourseResource
+    {
+        $user = $request->user();
+        DepartmentScope::authorize($user, $course->department_id);
+
+        $data = $request->validate(['lecturerId' => ['present', 'nullable', 'integer', 'exists:lecturers,id']]);
+        $lecturerId = $data['lecturerId'] !== null ? (int) $data['lecturerId'] : null;
+
+        if ($lecturerId !== null) {
+            // The lecturer must belong to the same department as the course.
+            $inDepartment = \App\Models\Lecturer::whereKey($lecturerId)->where('department_id', $course->department_id)->exists();
+            if (! $inDepartment) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'lecturerId' => 'The lecturer must belong to the same department as the course.',
+                ]);
+            }
+        }
+
+        $this->courses->assign($course, $lecturerId, $user);
+
+        return new CourseResource($course->fresh(['department', 'currentAssignment.lecturer.user']));
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Enums\ResultStatus;
+use App\Models\Course;
+use App\Models\Lecturer;
+use App\Models\Program;
+use App\Models\ResultSubmission;
+use App\Models\Semester;
+use App\Models\Student;
+use App\Support\DepartmentScope;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+/** Department admin: numbers for the dashboard, counted for the admin's own department only. */
+class DepartmentDashboardController extends DeptAdminController
+{
+    /** GET /api/dept/dashboard */
+    public function dashboard(Request $request): array
+    {
+        $user = $request->user();
+
+        $byStatus = [];
+        foreach (ResultStatus::cases() as $status) {
+            $byStatus[$status->value] = ResultSubmission::query()
+                ->whereHas('course', fn (Builder $course) => DepartmentScope::apply($course, $user, 'department_id'))
+                ->where('status', $status->value)
+                ->count();
+        }
+
+        $semester = Semester::current()->with('session')->first();
+
+        return [
+            'departmentName' => $user->department?->name ?? '',
+            'totalStudents' => DepartmentScope::apply(Student::query(), $user, 'department_id')->count(),
+            'totalLecturers' => DepartmentScope::apply(Lecturer::query(), $user, 'department_id')->count(),
+            'totalCourses' => DepartmentScope::apply(Course::query(), $user, 'department_id')->count(),
+            'activePrograms' => DepartmentScope::apply(Program::query(), $user, 'department_id')->count(),
+            'pendingSubmissions' => $byStatus[ResultStatus::Submitted->value],
+            'submissionsByStatus' => $byStatus,
+            'currentSession' => $semester?->session?->name ?? '',
+            'currentSemester' => $semester?->name?->value ?? '',
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DepartmentListController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Enums\UserStatus;
+use App\Http\Resources\CourseResource;
+use App\Http\Resources\LecturerResource;
+use App\Http\Resources\RegistrationResource;
+use App\Http\Resources\StudentResource;
+use App\Models\Course;
+use App\Models\Lecturer;
+use App\Models\Registration;
+use App\Models\Student;
+use App\Support\ApiResponse;
+use App\Support\DepartmentScope;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+/** Department admin: read-only lists, always limited to the admin's own department. */
+class DepartmentListController extends DeptAdminController
+{
+    /** GET /api/dept/students?search=&programId=&level=&status= */
+    public function students(Request $request): array
+    {
+        $query = Student::query()
+            ->with(['user', 'department.faculty', 'program'])
+            ->join('users', 'users.id', '=', 'students.user_id')
+            ->select('students.*')
+            ->orderBy('users.name');
+
+        DepartmentScope::apply($query, $request->user(), 'students.department_id');
+        $this->search($query, $request, ['students.matric_no', 'users.name', 'users.email']);
+        $this->whereId($query, $request, 'programId', 'students.program_id');
+        $this->whereId($query, $request, 'level', 'students.level');
+
+        $status = $request->query('status');
+        if ($status === 'graduated') {
+            $query->whereNotNull('students.graduated_at');
+        } elseif (is_string($status) && UserStatus::tryFrom($status)) {
+            $query->whereNull('students.graduated_at')->where('users.status', $status);
+        }
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), StudentResource::class);
+    }
+
+    /** GET /api/dept/lecturers?search=&status= */
+    public function lecturers(Request $request): array
+    {
+        // select() must come BEFORE withCount(): a later select() would drop the count column.
+        $query = Lecturer::query()
+            ->select('lecturers.*')
+            ->with(['user', 'department'])
+            ->withCount(['assignments as course_count' => fn (Builder $q) => $q->whereHas('session', fn (Builder $s) => $s->where('is_current', true))])
+            ->join('users', 'users.id', '=', 'lecturers.user_id')
+            ->orderBy('users.name');
+
+        DepartmentScope::apply($query, $request->user(), 'lecturers.department_id');
+        $this->search($query, $request, ['users.name', 'users.email', 'lecturers.specialization']);
+
+        $status = $request->query('status');
+        if (is_string($status) && UserStatus::tryFrom($status)) {
+            $query->where('users.status', $status);
+        }
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), LecturerResource::class);
+    }
+
+    /** GET /api/dept/courses?search=&level=&semester= */
+    public function courses(Request $request): array
+    {
+        $query = Course::query()
+            ->with(['department', 'currentAssignment.lecturer.user'])
+            ->orderBy('code');
+
+        DepartmentScope::apply($query, $request->user(), 'courses.department_id');
+        $this->search($query, $request, ['courses.code', 'courses.title']);
+        $this->whereId($query, $request, 'level', 'courses.level');
+
+        if (in_array($request->query('semester'), ['First', 'Second'], true)) {
+            $query->where('courses.semester', $request->query('semester'));
+        }
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), CourseResource::class);
+    }
+
+    /** GET /api/dept/registrations?search=&level=&semesterId= */
+    public function registrations(Request $request): array
+    {
+        $query = Registration::query()
+            ->with(['student.user', 'student.department', 'semester.session', 'courses'])
+            ->join('students', 'students.id', '=', 'registrations.student_id')
+            ->join('users', 'users.id', '=', 'students.user_id')
+            ->select('registrations.*')
+            ->orderByDesc('registrations.registered_at')
+            ->orderByDesc('registrations.id');
+
+        DepartmentScope::apply($query, $request->user(), 'students.department_id');
+        $this->search($query, $request, ['users.name', 'students.matric_no']);
+        $this->whereId($query, $request, 'level', 'students.level');
+        $this->whereId($query, $request, 'semesterId', 'registrations.semester_id');
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), RegistrationResource::class);
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DepartmentPeopleController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
+use App\Http\Resources\LecturerResource;
+use App\Http\Resources\StudentResource;
+use App\Models\Lecturer;
+use App\Models\Program;
+use App\Models\Student;
+use App\Models\User;
+use App\Services\AuditLogger;
+use App\Support\DepartmentScope;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Department admin: create, edit and (de)activate the students and lecturers of their own
+ * department. The department is never read from the request. Every change is audited.
+ */
+class DepartmentPeopleController extends DeptAdminController
+{
+    public function __construct(private readonly AuditLogger $audit)
+    {
+    }
+
+    // ----- students -----
+
+    /** POST /api/dept/students */
+    public function storeStudent(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        $departmentId = $this->departmentId($actor);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email:rfc', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'max:100'],
+            'matricNo' => ['required', 'string', 'max:30', 'regex:/^[A-Za-z0-9\/\-]+$/', 'unique:students,matric_no'],
+            'programId' => ['required', 'integer', 'exists:programs,id'],
+            'level' => ['required', 'integer', Rule::in([100, 200, 300, 400, 500, 600])],
+            'phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\-\s]{6,30}$/'],
+        ]);
+        $this->programInDepartment((int) $data['programId'], $departmentId);
+
+        $student = DB::transaction(function () use ($data, $departmentId, $actor) {
+            $user = User::create([
+                'name' => trim($data['name']),
+                'email' => strtolower($data['email']),
+                'password' => $data['password'],
+                'role' => UserRole::Student,
+                'status' => UserStatus::Active,
+            ]);
+            $student = Student::create([
+                'user_id' => $user->id,
+                'matric_no' => strtoupper($data['matricNo']),
+                'department_id' => $departmentId,
+                'program_id' => (int) $data['programId'],
+                'level' => (int) $data['level'],
+                'phone' => $data['phone'] ?? null,
+            ]);
+            $this->audit->record($actor, 'RECORD_CREATED', $student->matric_no, "Created student {$user->name} ({$student->matric_no})", $student);
+
+            return $student;
+        });
+
+        return (new StudentResource($this->freshStudent($student)))->response()->setStatusCode(201);
+    }
+
+    /** PUT /api/dept/students/{student}  (matric number and department cannot change) */
+    public function updateStudent(Request $request, Student $student): StudentResource
+    {
+        $actor = $request->user();
+        DepartmentScope::authorize($actor, $student->department_id);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email:rfc', 'max:255', Rule::unique('users', 'email')->ignore($student->user_id)],
+            'programId' => ['required', 'integer', 'exists:programs,id'],
+            'level' => ['required', 'integer', Rule::in([100, 200, 300, 400, 500, 600])],
+            'phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\-\s]{6,30}$/'],
+        ]);
+        $this->programInDepartment((int) $data['programId'], (int) $student->department_id);
+
+        DB::transaction(function () use ($data, $student, $actor) {
+            $student->user->fill(['name' => trim($data['name']), 'email' => strtolower($data['email'])]);
+            $student->fill(['program_id' => (int) $data['programId'], 'level' => (int) $data['level'], 'phone' => $data['phone'] ?? null]);
+            $changed = array_merge(array_keys($student->user->getDirty()), array_keys($student->getDirty()));
+            $student->user->save();
+            $student->save();
+            if ($changed !== []) {
+                $this->audit->record($actor, 'RECORD_UPDATED', $student->matric_no, "Updated student {$student->matric_no} (".implode(', ', $changed).')', $student);
+            }
+        });
+
+        return new StudentResource($this->freshStudent($student));
+    }
+
+    /** PATCH /api/dept/students/{student}/status */
+    public function studentStatus(Request $request, Student $student): StudentResource
+    {
+        DepartmentScope::authorize($request->user(), $student->department_id);
+        $this->changeStatus($request, $student->user, $student->matric_no);
+
+        return new StudentResource($this->freshStudent($student));
+    }
+
+    // ----- lecturers -----
+
+    /** POST /api/dept/lecturers */
+    public function storeLecturer(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        $departmentId = $this->departmentId($actor);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email:rfc', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'max:100'],
+            'specialization' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $lecturer = DB::transaction(function () use ($data, $departmentId, $actor) {
+            $user = User::create([
+                'name' => trim($data['name']),
+                'email' => strtolower($data['email']),
+                'password' => $data['password'],
+                'role' => UserRole::Lecturer,
+                'status' => UserStatus::Active,
+            ]);
+            $lecturer = Lecturer::create([
+                'user_id' => $user->id,
+                'department_id' => $departmentId,
+                'specialization' => $data['specialization'] ?? null,
+            ]);
+            $this->audit->record($actor, 'RECORD_CREATED', $user->name, "Created lecturer {$user->name}", $lecturer);
+
+            return $lecturer;
+        });
+
+        return (new LecturerResource($this->freshLecturer($lecturer)))->response()->setStatusCode(201);
+    }
+
+    /** PUT /api/dept/lecturers/{lecturer} */
+    public function updateLecturer(Request $request, Lecturer $lecturer): LecturerResource
+    {
+        $actor = $request->user();
+        DepartmentScope::authorize($actor, $lecturer->department_id);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email:rfc', 'max:255', Rule::unique('users', 'email')->ignore($lecturer->user_id)],
+            'specialization' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        DB::transaction(function () use ($data, $lecturer, $actor) {
+            $lecturer->user->fill(['name' => trim($data['name']), 'email' => strtolower($data['email'])]);
+            $lecturer->fill(['specialization' => $data['specialization'] ?? null]);
+            $changed = array_merge(array_keys($lecturer->user->getDirty()), array_keys($lecturer->getDirty()));
+            $lecturer->user->save();
+            $lecturer->save();
+            if ($changed !== []) {
+                $this->audit->record($actor, 'RECORD_UPDATED', $lecturer->user->name, "Updated lecturer {$lecturer->user->name} (".implode(', ', $changed).')', $lecturer);
+            }
+        });
+
+        return new LecturerResource($this->freshLecturer($lecturer));
+    }
+
+    /** PATCH /api/dept/lecturers/{lecturer}/status */
+    public function lecturerStatus(Request $request, Lecturer $lecturer): LecturerResource
+    {
+        DepartmentScope::authorize($request->user(), $lecturer->department_id);
+        $this->changeStatus($request, $lecturer->user, $lecturer->user->name);
+
+        return new LecturerResource($this->freshLecturer($lecturer));
+    }
+
+    // ----- programs (read only) -----
+
+    /** GET /api/dept/programs: the programs (and so the levels' programs) of this department. */
+    public function programs(Request $request): array
+    {
+        $query = Program::query()->with('department')->withCount('students')->orderBy('name');
+        DepartmentScope::apply($query, $request->user(), 'programs.department_id');
+
+        return \App\Support\ApiResponse::paginated($query->paginate(\App\Support\ApiResponse::perPage($request)), \App\Http\Resources\ProgramResource::class);
+    }
+
+    // ----- helpers -----
+
+    private function departmentId(User $actor): int
+    {
+        $id = $actor->resolveDepartmentId();
+        abort_if($id === null, 403, 'Your account is not linked to a department.');
+
+        return (int) $id;
+    }
+
+    private function programInDepartment(int $programId, int $departmentId): void
+    {
+        if (! Program::whereKey($programId)->where('department_id', $departmentId)->exists()) {
+            throw ValidationException::withMessages(['programId' => 'The selected program does not belong to your department.']);
+        }
+    }
+
+    private function changeStatus(Request $request, User $target, string $label): void
+    {
+        $actor = $request->user();
+        $data = $request->validate(['status' => ['required', Rule::in(UserStatus::values())]]);
+        $new = UserStatus::from($data['status']);
+        if ($target->status === $new) {
+            return;
+        }
+        $old = $target->status->value;
+        DB::transaction(function () use ($target, $new, $actor, $label, $old) {
+            $target->update(['status' => $new]);
+            if ($new !== UserStatus::Active) {
+                $target->tokens()->delete(); // sign the account out everywhere
+            }
+            $this->audit->record($actor, 'USER_STATUS_CHANGED', $label, "Changed {$label} from {$old} to {$new->value}", $target);
+        });
+    }
+
+    private function freshStudent(Student $student): Student
+    {
+        return $student->fresh(['user', 'department.faculty', 'program']);
+    }
+
+    private function freshLecturer(Lecturer $lecturer): Lecturer
+    {
+        return Lecturer::query()->with(['user', 'department'])
+            ->withCount(['assignments as course_count' => fn ($q) => $q->whereHas('session', fn ($s) => $s->where('is_current', true))])
+            ->findOrFail($lecturer->id);
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DepartmentReportController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Enums\ResultStatus;
+use App\Models\Registration;
+use App\Models\ResultSubmission;
+use App\Models\Student;
+use App\Support\DepartmentScope;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+/** Department admin: small reports for the own department. Each row is { label, value }. */
+class DepartmentReportController extends DeptAdminController
+{
+    /** GET /api/dept/reports/{students|registrations|results} */
+    public function show(Request $request, string $type): array
+    {
+        return match ($type) {
+            'students' => $this->students($request),
+            'registrations' => $this->registrations($request),
+            'results' => $this->results($request),
+            default => abort(404),
+        };
+    }
+
+    /** Students of the department grouped by level. */
+    private function students(Request $request): array
+    {
+        return DepartmentScope::apply(Student::query(), $request->user(), 'department_id')
+            ->orderBy('level')
+            ->get(['level'])
+            ->groupBy('level')
+            ->map(fn ($group, $level) => ['label' => "{$level} Level", 'value' => $group->count()])
+            ->values()
+            ->all();
+    }
+
+    /** Registrations of the CURRENT session grouped by the student's level. */
+    private function registrations(Request $request): array
+    {
+        $user = $request->user();
+
+        return Registration::query()
+            ->whereHas('student', fn (Builder $student) => DepartmentScope::apply($student, $user, 'department_id'))
+            ->whereHas('semester.session', fn (Builder $session) => $session->where('is_current', true))
+            ->with('student')
+            ->get()
+            ->sortBy(fn ($registration) => $registration->student->level)
+            ->groupBy(fn ($registration) => $registration->student->level)
+            ->map(fn ($group, $level) => ['label' => "{$level} Level", 'value' => $group->count()])
+            ->values()
+            ->all();
+    }
+
+    /** Result submissions of the department by status. Every status is listed, even with zero. */
+    private function results(Request $request): array
+    {
+        $user = $request->user();
+        $rows = [];
+
+        foreach (ResultStatus::cases() as $status) {
+            $rows[] = [
+                'label' => ucfirst($status->value),
+                'value' => ResultSubmission::query()
+                    ->whereHas('course', fn (Builder $course) => DepartmentScope::apply($course, $user, 'department_id'))
+                    ->where('status', $status->value)
+                    ->count(),
+            ];
+        }
+
+        return $rows;
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Enums\ResultStatus;
+use App\Http\Resources\SubmissionResource;
+use App\Models\ResultSubmission;
+use App\Services\AuditLogger;
+use App\Support\ApiResponse;
+use App\Support\DepartmentScope;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Department admin: review the results that lecturers of this department submitted.
+ * Rules: only submitted results can be approved or rejected; a rejection needs feedback;
+ * only approved results can be reopened; every action is written to the audit log.
+ */
+class DepartmentSubmissionController extends DeptAdminController
+{
+    public function __construct(private readonly AuditLogger $audit)
+    {
+    }
+
+    /** GET /api/dept/submissions?status=&search=&page=&per_page= */
+    public function index(Request $request): array
+    {
+        // select() must come BEFORE withCount(): a later select() would drop the count column.
+        $query = ResultSubmission::query()
+            ->select('result_submissions.*')
+            ->with($this->relations())
+            ->withCount('results as student_count')
+            ->join('courses', 'courses.id', '=', 'result_submissions.course_id')
+            ->orderByDesc('result_submissions.updated_at')
+            ->orderByDesc('result_submissions.id');
+
+        DepartmentScope::apply($query, $request->user(), 'courses.department_id');
+        $this->search($query, $request, ['courses.code', 'courses.title']);
+
+        $status = $request->query('status');
+        if (is_string($status) && ResultStatus::tryFrom($status)) {
+            $query->where('result_submissions.status', $status);
+        }
+
+        return ApiResponse::paginated($query->paginate(ApiResponse::perPage($request)), SubmissionResource::class);
+    }
+
+    /** GET /api/dept/submissions/{submission} */
+    public function show(Request $request, ResultSubmission $submission): SubmissionResource
+    {
+        $this->authorizeSubmission($request, $submission);
+
+        return new SubmissionResource($this->loaded($submission->getKey()));
+    }
+
+    /** GET /api/dept/submissions/{submission}/results: the scores the admin is reviewing. */
+    public function results(Request $request, ResultSubmission $submission): array
+    {
+        $this->authorizeSubmission($request, $submission);
+
+        $rows = $submission->results()->with('student.user')->get()
+            ->sortBy(fn ($result) => $result->student?->matric_no ?? '')
+            ->values()
+            ->map(fn ($result) => [
+                'id' => (string) $result->id,
+                'studentId' => (string) $result->student_id,
+                'matricNo' => $result->student?->matric_no ?? '',
+                'studentName' => $result->student?->user?->name ?? '',
+                'caScore' => $result->ca_score !== null ? (float) $result->ca_score : null,
+                'examScore' => $result->exam_score !== null ? (float) $result->exam_score : null,
+                'totalScore' => $result->total_score !== null ? (float) $result->total_score : null,
+                'grade' => $result->grade,
+                'gradePoint' => $result->grade_point !== null ? (float) $result->grade_point : null,
+            ])
+            ->all();
+
+        return ['data' => $rows];
+    }
+
+    /** POST /api/dept/submissions/{submission}/approve */
+    public function approve(Request $request, ResultSubmission $submission): SubmissionResource
+    {
+        return $this->review(
+            $request, $submission,
+            [ResultStatus::Submitted], ResultStatus::Approved,
+            'RESULT_APPROVED', 'Approved results for %s',
+            'Only submitted results can be approved.', null,
+        );
+    }
+
+    /** POST /api/dept/submissions/{submission}/reject  body: { feedback } (required) */
+    public function reject(Request $request, ResultSubmission $submission): SubmissionResource
+    {
+        $this->authorizeSubmission($request, $submission);
+        $data = $request->validate(['feedback' => ['required', 'string', 'min:3', 'max:1000']]);
+
+        return $this->review(
+            $request, $submission,
+            [ResultStatus::Submitted], ResultStatus::Rejected,
+            'RESULT_REJECTED', 'Rejected results for %s and returned them to the lecturer',
+            'Only submitted results can be rejected.', $data['feedback'],
+        );
+    }
+
+    /** POST /api/dept/submissions/{submission}/reopen  body: { feedback } (optional reason) */
+    public function reopen(Request $request, ResultSubmission $submission): SubmissionResource
+    {
+        $this->authorizeSubmission($request, $submission);
+        $data = $request->validate(['feedback' => ['nullable', 'string', 'max:1000']]);
+
+        return $this->review(
+            $request, $submission,
+            [ResultStatus::Approved], ResultStatus::Reopened,
+            'RESULT_REOPENED', 'Reopened approved results for %s so the lecturer can edit them',
+            'Only approved results can be reopened.', $data['feedback'] ?? null,
+        );
+    }
+
+    /**
+     * Move a submission to a new status inside one transaction. The row is locked and the
+     * status is checked again, so two admins cannot approve and reject the same submission.
+     *
+     * @param  list<ResultStatus>  $allowedFrom
+     */
+    private function review(
+        Request $request,
+        ResultSubmission $submission,
+        array $allowedFrom,
+        ResultStatus $to,
+        string $action,
+        string $detailsTemplate,
+        string $failMessage,
+        ?string $note,
+    ): SubmissionResource {
+        $user = $request->user();
+        $this->authorizeSubmission($request, $submission);
+        $code = $submission->course->code;
+
+        DB::transaction(function () use ($user, $submission, $allowedFrom, $to, $action, $detailsTemplate, $failMessage, $note, $code) {
+            $locked = ResultSubmission::query()->whereKey($submission->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! in_array($locked->status, $allowedFrom, true)) {
+                abort(422, $failMessage);
+            }
+
+            $locked->update([
+                'status' => $to,
+                'feedback' => $note,
+                'reviewed_by' => $user->id,
+                'reviewed_at' => now(),
+            ]);
+
+            $this->audit->record(
+                $user,
+                $action,
+                $code,
+                sprintf($detailsTemplate, $code),
+                $locked,
+                $note !== null ? ['note' => $note] : [],
+            );
+        });
+
+        return new SubmissionResource($this->loaded($submission->getKey()));
+    }
+
+    /** 403 unless the submission's course belongs to the admin's own department. */
+    private function authorizeSubmission(Request $request, ResultSubmission $submission): void
+    {
+        $submission->loadMissing('course');
+        DepartmentScope::authorize($request->user(), $submission->course?->department_id);
+    }
+
+    private function loaded(int|string $id): ResultSubmission
+    {
+        return ResultSubmission::query()
+            ->with($this->relations())
+            ->withCount('results as student_count')
+            ->findOrFail($id);
+    }
+
+    /** @return array<int|string, mixed> */
+    private function relations(): array
+    {
+        return [
+            'course.department',
+            'lecturer.user',
+            'semester.session',
+            'auditLogs' => fn ($query) => $query->orderBy('created_at')->orderBy('id'),
+        ];
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\backend\app\Http\Controllers\Api\DeptAdmin\DeptAdminController.php ===
+<?php
+
+namespace App\Http\Controllers\Api\DeptAdmin;
+
+use App\Http\Controllers\Controller;
+use App\Support\ApiResponse;
+use App\Support\LikeSearch;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+/**
+ * Shared helpers for the department admin controllers (T2.6).
+ * Every query in these controllers must go through DepartmentScope::apply() first.
+ */
+abstract class DeptAdminController extends Controller
+{
+    /** Apply an exact-match filter when the query value is a whole number (ids and levels). */
+    protected function whereId(Builder $query, Request $request, string $param, string $column): void
+    {
+        $value = $request->query($param);
+        if (is_string($value) && ctype_digit($value)) {
+            $query->where($column, (int) $value);
+        }
+    }
+
+    /**
+     * Case-insensitive search. It is always wrapped in its own group so an "or" inside the
+     * search can never switch off the department scope that was added before it.
+     *
+     * @param  list<string>  $columns
+     */
+    protected function search(Builder $query, Request $request, array $columns): void
+    {
+        $term = ApiResponse::search($request);
+        if ($term === null || $term === '') {
+            return;
+        }
+
+        $query->where(fn (Builder $group) => LikeSearch::apply($group, $term, $columns));
+    }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\admin\index.tsx ===
+import type { AdminSection } from "./sections";
+import ActivityLog from "./ActivityLog";
+import Courses from "./Courses";
+import Departments from "./Departments";
+import Faculties from "./Faculties";
+import Oversight from "./Oversight";
+import Overview from "./Overview";
+import Programs from "./Programs";
+import Registrations from "./Registrations";
+import Reports from "./Reports";
+import Roles from "./Roles";
+import Sessions from "./Sessions";
+import Users from "./Users";
+
+export type { AdminSection } from "./sections";
+
+/** Routes a super admin menu section to its page. All data comes from /api/admin/*. */
+export default function AdminPages({ section = "overview", onSectionChange }: { section?: string; onSectionChange?: (section: string) => void }) {
+  const go = (next: AdminSection) => onSectionChange?.(next);
+  switch (section) {
+    case "faculties": return <Faculties />;
+    case "departments": return <Departments />;
+    case "programs": return <Programs />;
+    case "sessions": return <Sessions />;
+    case "users": return <Users />;
+    case "roles": return <Roles />;
+    case "courses": return <Courses />;
+    case "registrations": return <Registrations />;
+    case "oversight": return <Oversight />;
+    case "reports": return <Reports />;
+    case "activity-log": return <ActivityLog />;
+    default: return <Overview go={go} />;
+  }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\admin\Overview.tsx ===
+import { ArrowRight, BookOpen, Building2, CalendarDays, ClipboardCheck, GraduationCap, Users } from "lucide-react";
+import { api } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import { DataTable } from "../../components/admin/DataTable";
+import { AdminPage, ErrorState, Initials, LoadingBlock, PageHeader, StatCard, StatusBadge, formatDate } from "../../components/admin/ui";
+import type { AdminSection } from "./sections";
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
+
+export default function Overview({ go }: { go: (section: AdminSection) => void }) {
+  const { user } = useAuth();
+  const { data, loading, error, reload } = useAsyncData(async () => {
+    const [dashboard, registrations, submissions] = await Promise.all([
+      api.admin.dashboard(),
+      api.admin.registrations({ page: 1 }),
+      api.admin.submissions({ page: 1 }),
+    ]);
+    return { dashboard, registrations: registrations.data.slice(0, 5), pending: submissions.data.filter((item) => item.status === "submitted").slice(0, 5) };
+  });
+
+  const firstName = user?.name.split(" ").filter((part) => !part.endsWith("."))[0] ?? "";
+  const dashboard = data?.dashboard;
+
+  return <AdminPage>
+    <PageHeader
+      eyebrow="University overview"
+      title={<>{greeting()}{firstName && `, ${firstName}`}</>}
+      description="Here's what's happening across your university today."
+      actions={dashboard && <div className="flex items-center gap-2 rounded-lg border border-[#e7e9ed] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#606873]"><CalendarDays size={15} /> {dashboard.currentSession} · {dashboard.currentSemester} semester</div>}
+    />
+    {error ? <ErrorState error={error} onRetry={reload} /> : loading || !data || !dashboard ? <LoadingBlock /> : <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total students" value={dashboard.totalStudents.toLocaleString()} icon={GraduationCap} />
+        <StatCard label="Total lecturers" value={dashboard.totalLecturers.toLocaleString()} icon={Users} />
+        <StatCard label="Faculties" value={dashboard.totalFaculties} icon={Building2} note={`${dashboard.totalDepartments} departments`} />
+        <StatCard label="Active programs" value={dashboard.activePrograms} icon={BookOpen} />
+      </div>
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1.65fr_1fr]">
+        <DataTable
+          title="Recent registrations"
+          subtitle="Latest student course registrations"
+          rows={data.registrations}
+          rowKey={(row) => row.id}
+          emptyMessage="No registrations yet."
+          action={<button onClick={() => go("registrations")} className="flex items-center gap-1 text-xs font-semibold text-[#274b82]">View all <ArrowRight size={14} /></button>}
+          columns={[
+            { key: "student", header: "Student", render: (row) => <div className="flex items-center gap-3"><Initials name={row.studentName} /><div><div className="font-semibold text-[#343c48]">{row.studentName}</div><div className="mt-1 text-[11px] text-[#a0a6ae]">{row.matricNo}</div></div></div> },
+            { key: "department", header: "Department", render: (row) => row.departmentName },
+            { key: "units", header: "Units", render: (row) => row.totalUnits },
+            { key: "date", header: "Registered", className: "whitespace-nowrap", render: (row) => formatDate(row.registeredAt) },
+          ]}
+        />
+        <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+          <h2 className="text-base font-bold tracking-tight">Needs your attention</h2>
+          <p className="mt-1 text-xs text-[#999fa7]">Result submissions waiting for review</p>
+          <button onClick={() => go("oversight")} className="mt-5 flex w-full items-center gap-3 rounded-lg border border-[#edeff2] p-3 text-left hover:bg-[#f9fafc]">
+            <span className="rounded-lg bg-[#fff4df] p-2 text-[#c6943f]"><ClipboardCheck size={17} /></span>
+            <span className="flex-1"><span className="block text-xs font-semibold">Pending approvals</span><span className="mt-1 block text-[11px] text-[#9aa0a9]">{dashboard.pendingSubmissions} {dashboard.pendingSubmissions === 1 ? "submission" : "submissions"} awaiting review</span></span>
+            <ArrowRight size={15} className="text-[#a7adb5]" />
+          </button>
+          <ul className="mt-4 space-y-3">
+            {data.pending.map((item) => <li key={item.id} className="flex items-center justify-between gap-3 text-xs"><span className="min-w-0"><span className="block truncate font-semibold text-[#343c48]">{item.courseCode} · {item.courseTitle}</span><span className="mt-0.5 block text-[11px] text-[#a0a6ae]">{item.lecturerName} · {formatDate(item.submittedAt)}</span></span><StatusBadge value={item.status} /></li>)}
+            {data.pending.length === 0 && <li className="text-xs text-[#959ca6]">Nothing is waiting for review.</li>}
+          </ul>
+        </section>
+      </div>
+    </>}
+  </AdminPage>;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\admin\Programs.tsx ===
+import { CrudPage } from "../../components/admin/CrudPage";
+import { ErrorState, LoadingBlock, AdminPage } from "../../components/admin/ui";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import { api } from "../../lib/api";
+import type { Program } from "../../types/portal";
+
+export default function Programs() {
+  const departments = useAsyncData(async () => (await api.admin.list("departments", { per_page: 100 })).data.map((department) => ({ value: department.id, label: department.name })));
+  if (departments.error) return <AdminPage><ErrorState error={departments.error} onRetry={departments.reload} /></AdminPage>;
+  if (!departments.data) return <AdminPage><LoadingBlock /></AdminPage>;
+
+  return <CrudPage<Program>
+    resource="programs"
+    eyebrow="University management"
+    title="Programs"
+    singular="program"
+    description="Manage academic programs across all departments."
+    fields={[
+      { key: "name", label: "Program name", required: true },
+      { key: "award", label: "Award (e.g. B.Sc.)", required: true },
+      { key: "departmentId", label: "Department", type: "select", required: true, options: departments.data },
+      { key: "durationYears", label: "Duration (years)", type: "number", required: true },
+    ]}
+    columns={[
+      { key: "name", header: "Program", render: (row) => <span className="font-semibold text-[#343c48]">{row.name}</span> },
+      { key: "award", header: "Award", render: (row) => row.award },
+      { key: "department", header: "Department", render: (row) => row.departmentName },
+      { key: "duration", header: "Duration", render: (row) => `${row.durationYears} ${row.durationYears === 1 ? "year" : "years"}` },
+      { key: "students", header: "Students", render: (row) => row.studentCount },
+    ]}
+  />;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\admin\Roles.tsx ===
+import { Check, Minus } from "lucide-react";
+import { api } from "../../lib/api";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import { AdminPage, ErrorState, LoadingBlock, PageHeader } from "../../components/admin/ui";
+
+const card = "overflow-hidden rounded-xl border border-[#e9ebee] bg-white";
+
+export default function Roles() {
+  const roles = useAsyncData(() => api.admin.roles());
+  const scale = useAsyncData(() => api.admin.gradingScale());
+  const permissions = Array.from(new Set((roles.data ?? []).flatMap((role) => role.permissions)));
+
+  return <AdminPage>
+    <PageHeader eyebrow="University management" title="Roles & permissions" description="The four roles that control access across the portal. To change someone's role, use the Users page." />
+
+    {roles.error ? <ErrorState error={roles.error} onRetry={roles.reload} /> : !roles.data ? <LoadingBlock /> : <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {roles.data.map((role) => <div key={role.role} className="rounded-xl border border-[#e9ebee] bg-white p-5">
+          <div className="flex items-center justify-between"><h2 className="text-sm font-bold">{role.label}</h2><span className="rounded-full bg-[#eef3ff] px-2 py-1 text-[10px] font-bold text-[#5373c8]">{role.userCount} {role.userCount === 1 ? "user" : "users"}</span></div>
+          <p className="mt-2 text-xs leading-5 text-[#8a909a]">{role.description}</p>
+        </div>)}
+      </div>
+      <section className={`${card} mt-6`}>
+        <div className="p-5"><h2 className="text-base font-bold tracking-tight">Permission matrix</h2><p className="mt-1 text-xs text-[#9aa1ab]">Read-only. Permissions are enforced by the API, not just hidden in the interface.</p></div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-xs">
+            <thead className="bg-[#f8f9fa] text-[10px] font-semibold uppercase tracking-[.09em] text-[#9ca2ab]"><tr><th className="px-5 py-3.5">Permission</th>{roles.data.map((role) => <th key={role.role} className="px-5 py-3.5 text-center">{role.label}</th>)}</tr></thead>
+            <tbody>{permissions.map((permission) => <tr key={permission} className="border-t border-[#f1f2f4]">
+              <td className="px-5 py-3.5 font-medium text-[#343c48]">{permission}</td>
+              {roles.data!.map((role) => <td key={role.role} className="px-5 py-3.5 text-center">{role.permissions.includes(permission)
+                ? <Check size={16} className="inline text-[#2f6b3f]" aria-label="Allowed" />
+                : <Minus size={16} className="inline text-[#c3c8cf]" aria-label="Not allowed" />}</td>)}
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </section>
+    </>}
+
+    <section className={`${card} mt-6`}>
+      <div className="p-5"><h2 className="text-base font-bold tracking-tight">Grading scale</h2><p className="mt-1 text-xs text-[#9aa1ab]">Read-only. This is the scale the backend uses to compute grades and GPA.</p></div>
+      {scale.error ? <div className="p-5"><ErrorState error={scale.error} onRetry={scale.reload} /></div> : !scale.data ? <div className="p-5"><LoadingBlock /></div> : <div className="grid gap-6 border-t border-[#f1f2f4] p-5 lg:grid-cols-[1fr_1.4fr]">
+        <div className="space-y-3 text-sm">
+          <div className="flex justify-between"><span className="text-[#8a909a]">Continuous assessment (max)</span><span className="font-bold">{scale.data.caMax}</span></div>
+          <div className="flex justify-between"><span className="text-[#8a909a]">Examination (max)</span><span className="font-bold">{scale.data.examMax}</span></div>
+          <div className="flex justify-between border-t border-[#f1f2f4] pt-3"><span className="text-[#8a909a]">Total</span><span className="font-bold">{scale.data.caMax + scale.data.examMax}</span></div>
+          <div className="rounded-lg bg-[#f5f8ff] p-3 text-xs text-[#3858a5]"><span className="font-semibold">GPA: </span>{scale.data.gpaFormula}</div>
+        </div>
+        <table className="w-full text-left text-xs">
+          <thead className="text-[10px] font-semibold uppercase tracking-[.09em] text-[#9ca2ab]"><tr><th className="py-2">Score</th><th className="py-2">Grade</th><th className="py-2">Points</th></tr></thead>
+          <tbody>{scale.data.bands.map((band) => <tr key={band.grade} className="border-t border-[#f1f2f4]"><td className="py-2.5">{band.min} – {band.max}</td><td className="py-2.5 font-bold">{band.grade}</td><td className="py-2.5">{band.point}</td></tr>)}</tbody>
+        </table>
+      </div>}
+    </section>
+  </AdminPage>;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\admin\Users.tsx ===
+import { useState } from "react";
+import { toast } from "sonner";
+import { api } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
+import { roleName } from "../../lib/navigation";
+import { useAsyncData, useDebouncedValue } from "../../hooks/useAsyncData";
+import type { User, UserRole, UserStatus } from "../../types/portal";
+import { DataTable } from "../../components/admin/DataTable";
+import { AdminPage, ErrorState, Field, Initials, Modal, PageHeader, SearchInput, StatusBadge, buttonClass, errorMessage, formatDate, inputClass, primaryClass } from "../../components/admin/ui";
+
+const ROLES: UserRole[] = ["super_admin", "dept_admin", "lecturer", "student"];
+const STATUSES: UserStatus[] = ["active", "inactive", "suspended"];
+
+export default function Users() {
+  const { user: me } = useAuth();
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const query = useDebouncedValue(search);
+  const { data, loading, error, reload } = useAsyncData(() => api.admin.users({ page, search: query, role, status }), [page, query, role, status]);
+
+  const [managing, setManaging] = useState<User | null>(null);
+  const [nextRole, setNextRole] = useState<UserRole>("student");
+  const [nextStatus, setNextStatus] = useState<UserStatus>("active");
+  const [saving, setSaving] = useState(false);
+
+  const needle = query.trim().toLowerCase();
+  // The server filters; this also filters the loaded page so the mock behaves the same.
+  const rows = (data?.data ?? []).filter((row) =>
+    (!needle || row.name.toLowerCase().includes(needle) || row.email.toLowerCase().includes(needle)) &&
+    (!role || row.role === role) && (!status || row.status === status));
+
+  function manage(row: User) { setManaging(row); setNextRole(row.role); setNextStatus(row.status); }
+  const isSelf = managing !== null && managing.id === me?.id;
+
+  async function save() {
+    if (!managing) return;
+    setSaving(true);
+    try {
+      if (nextRole !== managing.role) await api.admin.setUserRole(managing.id, nextRole);
+      if (nextStatus !== managing.status) await api.admin.setUserStatus(managing.id, nextStatus);
+      toast.success(`${managing.name} updated.`);
+      setManaging(null);
+      reload();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filters = <>
+    <SearchInput label="Search users" value={search} onChange={(value) => { setSearch(value); setPage(1); }} />
+    <select aria-label="Filter by role" className={`${inputClass} w-auto min-w-[140px]`} value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}>
+      <option value="">All roles</option>{ROLES.map((value) => <option key={value} value={value}>{roleName[value]}</option>)}
+    </select>
+    <select aria-label="Filter by status" className={`${inputClass} w-auto min-w-[140px]`} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+      <option value="">All statuses</option>{STATUSES.map((value) => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}
+    </select>
+  </>;
+
+  return <AdminPage>
+    <PageHeader eyebrow="University management" title="Users" description="Activate, deactivate or suspend accounts and change a user's role." />
+    {error ? <ErrorState error={error} onRetry={reload} /> : <DataTable
+      title="All users"
+      rows={rows}
+      rowKey={(row) => row.id}
+      loading={loading}
+      emptyMessage="No users match your filters."
+      toolbar={filters}
+      page={data?.meta.current_page ?? page}
+      lastPage={data?.meta.last_page ?? 1}
+      total={data?.meta.total}
+      onPageChange={setPage}
+      columns={[
+        { key: "user", header: "User", render: (row) => <div className="flex items-center gap-3"><Initials name={row.name} /><div><div className="font-semibold text-[#343c48]">{row.name}</div><div className="mt-1 text-[11px] text-[#a0a6ae]">{row.email}</div></div></div> },
+        { key: "role", header: "Role", render: (row) => roleName[row.role] },
+        { key: "department", header: "Department", render: (row) => row.department_name ?? "—" },
+        { key: "status", header: "Status", render: (row) => <StatusBadge value={row.status} /> },
+        { key: "active", header: "Last active", className: "whitespace-nowrap", render: (row) => formatDate(row.lastActive) },
+        { key: "actions", header: "Actions", render: (row) => <button className={buttonClass} onClick={() => manage(row)}>Manage</button> },
+      ]}
+    />}
+
+    {managing && <Modal title="Manage user" description={`${managing.name} · ${managing.email}`} onClose={() => setManaging(null)}>
+      <div className="mt-6 space-y-4">
+        {isSelf && <p className="rounded-lg bg-[#fff4de] p-3 text-xs text-[#8a5e12]">You can't change your own role or status.</p>}
+        <Field label="Role"><select disabled={isSelf} className={`${inputClass} mt-1.5`} value={nextRole} onChange={(e) => setNextRole(e.target.value as UserRole)}>{ROLES.map((value) => <option key={value} value={value}>{roleName[value]}</option>)}</select></Field>
+        <Field label="Status"><select disabled={isSelf} className={`${inputClass} mt-1.5`} value={nextStatus} onChange={(e) => setNextStatus(e.target.value as UserStatus)}>{STATUSES.map((value) => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <button className={buttonClass} onClick={() => setManaging(null)}>Cancel</button>
+          <button className={primaryClass} disabled={saving || isSelf || (nextRole === managing.role && nextStatus === managing.status)} onClick={save}>{saving ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    </Modal>}
+  </AdminPage>;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\dept\index.tsx ===
+import Approvals from "./Approvals";
+import Assignments from "./Assignments";
+import Courses from "./Courses";
+import Lecturers from "./Lecturers";
+import Overview from "./Overview";
+import Programs from "./Programs";
+import Registrations from "./Registrations";
+import Reports from "./Reports";
+import Students from "./Students";
+
+export type DeptSection = "overview" | "students" | "lecturers" | "courses" | "assignments" | "programs" | "registrations" | "approvals" | "reports";
+
+/** Routes a department admin menu section to its page. All data comes from /api/dept/*. */
+export default function DeptPages({ section }: { section: string }) {
+  switch (section) {
+    case "students": return <Students />;
+    case "lecturers": return <Lecturers />;
+    case "courses": return <Courses />;
+    case "assignments": return <Assignments />;
+    case "programs": return <Programs />;
+    case "registrations": return <Registrations />;
+    case "approvals": return <Approvals />;
+    case "reports": return <Reports />;
+    default: return <Overview />;
+  }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\dept\Overview.tsx ===
+import { Link } from "react-router-dom";
+import { ArrowRight, BookOpen, GraduationCap, Library, ShieldCheck, Users } from "lucide-react";
+import { api } from "../../lib/api";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import type { ResultStatus } from "../../types/portal";
+import { AdminPage, ErrorState, LoadingBlock, PageHeader, StatCard, StatusBadge } from "../../components/admin/ui";
+
+const STATUSES: ResultStatus[] = ["submitted", "approved", "rejected", "reopened", "draft"];
+
+export default function Overview() {
+  const { data, error, reload } = useAsyncData(() => api.dept.dashboard(), []);
+  if (error) return <AdminPage><ErrorState error={error} onRetry={reload} /></AdminPage>;
+  if (!data) return <AdminPage><LoadingBlock /></AdminPage>;
+
+  return <AdminPage>
+    <PageHeader eyebrow={`${data.currentSession} · ${data.currentSemester} semester`} title={`${data.departmentName} department`}
+      description="People, courses and result submissions of your department."
+      actions={<Link to="/dept/approvals" className="inline-flex items-center gap-2 rounded-lg bg-[#2454b8] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4294]"><ShieldCheck size={16} /> Review results ({data.pendingSubmissions})</Link>} />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard label="Students" value={data.totalStudents} icon={GraduationCap} />
+      <StatCard label="Lecturers" value={data.totalLecturers} icon={Users} />
+      <StatCard label="Courses" value={data.totalCourses} icon={BookOpen} />
+      <StatCard label="Programs" value={data.activePrograms} icon={Library} />
+    </div>
+    <section className="mt-6 max-w-xl rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+      <h2 className="text-base font-bold tracking-tight">Result submissions</h2>
+      <p className="mt-1 text-xs text-[#999fa7]">Current session, by status.</p>
+      <ul className="mt-5 space-y-3">
+        {STATUSES.map((status) => <li key={status} className="flex items-center justify-between text-sm">
+          <StatusBadge value={status} /><span className="text-lg font-bold tracking-tight">{data.submissionsByStatus[status]}</span>
+        </li>)}
+      </ul>
+      <Link to="/dept/approvals" className="mt-5 inline-flex items-center gap-1 text-xs font-semibold text-[#274b82]">Open result approvals <ArrowRight size={14} /></Link>
+    </section>
+  </AdminPage>;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\dept\Programs.tsx ===
+import { api } from "../../lib/api";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import type { Program } from "../../types/portal";
+import { DataTable } from "../../components/admin/DataTable";
+import { AdminPage, ErrorState, LoadingBlock, PageHeader } from "../../components/admin/ui";
+
+export default function Programs() {
+  const programs = useAsyncData(() => api.dept.programs({ per_page: 100 }), []);
+  const levels = useAsyncData(() => api.dept.report("students"), []);
+  const max = Math.max(1, ...(levels.data ?? []).map((r) => r.value));
+
+  return <AdminPage>
+    <PageHeader eyebrow="Academics" title="Levels & programs" description="Programs offered by your department and how many students are at each level. New programs are created by the university administrator." />
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1.5fr_1fr]">
+      {programs.error ? <ErrorState error={programs.error} onRetry={programs.reload} /> : <DataTable<Program>
+        title="Programs" subtitle={programs.data ? `${programs.data.meta.total} programs` : undefined}
+        rows={programs.data?.data ?? []} rowKey={(r) => r.id} loading={programs.loading && !programs.data}
+        columns={[
+          { key: "name", header: "Program", render: (r) => <span className="font-semibold text-[#343c48]">{r.name}</span> },
+          { key: "award", header: "Award", render: (r) => r.award },
+          { key: "years", header: "Duration", render: (r) => `${r.durationYears} years` },
+          { key: "students", header: "Students", render: (r) => r.studentCount },
+        ]} />}
+      <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+        <h2 className="text-base font-bold tracking-tight">Students by level</h2>
+        {levels.error ? <ErrorState error={levels.error} onRetry={levels.reload} /> : !levels.data ? <div className="mt-4"><LoadingBlock /></div> : levels.data.length === 0 ? <p className="py-8 text-center text-sm text-[#959ca6]">No students yet.</p> : <ul className="mt-5 space-y-4">
+          {levels.data.map((row) => <li key={row.label}>
+            <div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#343c48]">{row.label}</span><span className="font-bold">{row.value}</span></div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-[#edf1f6]"><div className="h-full rounded-full bg-[#2454b8]" style={{ width: `${(row.value / max) * 100}%` }} /></div>
+          </li>)}
+        </ul>}
+      </section>
+    </div>
+  </AdminPage>;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\lecturer\index.tsx ===
+import Courses from "./Courses";
+import Overview from "./Overview";
+import ResultEntry from "./ResultEntry";
+import Submissions from "./Submissions";
+
+export type LecturerSection = "overview" | "courses" | "results" | "submissions";
+
+/** Routes a lecturer menu section to its page. All data comes from /api/lecturer/*. */
+export default function LecturerPages({ section }: { section: string }) {
+  switch (section) {
+    case "courses": return <Courses />;
+    case "results": return <ResultEntry />;
+    case "submissions": return <Submissions />;
+    default: return <Overview />;
+  }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\lecturer\Overview.tsx ===
+import { Link } from "react-router-dom";
+import { AlertCircle, ArrowRight, BookOpen, CalendarDays, ClipboardCheck, FileCheck2, Users } from "lucide-react";
+import { api } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import type { ResultStatus } from "../../types/portal";
+import { AdminPage, ErrorState, LoadingBlock, PageHeader, StatCard, StatusBadge } from "../../components/admin/ui";
+
+const STATUSES: ResultStatus[] = ["draft", "submitted", "approved", "rejected", "reopened"];
+
+export default function Overview() {
+  const { user } = useAuth();
+  const dashboard = useAsyncData(() => api.lecturer.dashboard(), []);
+  const courses = useAsyncData(() => api.lecturer.courses(), []);
+
+  if (dashboard.error) return <AdminPage><ErrorState error={dashboard.error} onRetry={dashboard.reload} /></AdminPage>;
+  if (!dashboard.data) return <AdminPage><LoadingBlock /></AdminPage>;
+
+  const d = dashboard.data;
+  const needAction = (courses.data?.data ?? []).filter((course) => ["rejected", "reopened"].includes(course.submissionStatus));
+
+  return <AdminPage>
+    <PageHeader
+      eyebrow={`${d.departmentName || "Lecturer"} · ${d.currentSession} · ${d.currentSemester} semester`}
+      title={`Welcome, ${user?.name ?? d.lecturerName}`}
+      description="Your assigned courses and the progress of your result submissions."
+      actions={<Link to="/lecturer/results" className="inline-flex items-center gap-2 rounded-lg bg-[#2454b8] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4294]"><FileCheck2 size={16} /> Enter results</Link>}
+    />
+
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard label="Assigned courses" value={d.assignedCourses} icon={BookOpen} note="This session" />
+      <StatCard label="Students taught" value={d.totalStudents} icon={Users} note="Registered this semester" />
+      <StatCard label="Not started" value={d.notStarted} icon={ClipboardCheck} note="Courses with no result sheet yet" />
+      <StatCard label="Awaiting review" value={d.submissionsByStatus.submitted} icon={CalendarDays} note="Submitted to the department" />
+    </div>
+
+    <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1.4fr_1fr]">
+      <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+        <h2 className="text-base font-bold tracking-tight">Needs your attention</h2>
+        <p className="mt-1 text-xs text-[#999fa7]">Results sent back for correction or reopened by the department.</p>
+        <div className="mt-5 space-y-3">
+          {needAction.map((course) => <Link key={course.id} to={`/lecturer/results?course=${course.id}`} className="flex items-center gap-3 rounded-lg border border-[#edeff2] p-3 hover:bg-[#f9fafc]">
+            <span className="rounded-lg bg-[#fff4df] p-2 text-[#c6943f]"><AlertCircle size={17} /></span>
+            <span className="flex-1">
+              <span className="block text-xs font-semibold">{course.code} · {course.title}</span>
+              <span className="mt-1 block text-[11px] text-[#9aa0a9]">{course.feedback || "Open the result sheet to correct and resubmit."}</span>
+            </span>
+            <StatusBadge value={course.submissionStatus} />
+            <ArrowRight size={15} className="text-[#a7adb5]" />
+          </Link>)}
+          {needAction.length === 0 && <p className="rounded-lg bg-[#f7f9fc] p-4 text-sm text-[#8a909a]">Nothing needs correction right now.</p>}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+        <h2 className="text-base font-bold tracking-tight">My submissions</h2>
+        <p className="mt-1 text-xs text-[#999fa7]">Result sheets of the current session by status.</p>
+        <ul className="mt-5 space-y-3">
+          {STATUSES.map((status) => <li key={status} className="flex items-center justify-between text-sm">
+            <StatusBadge value={status} />
+            <span className="text-lg font-bold tracking-tight">{d.submissionsByStatus[status]}</span>
+          </li>)}
+        </ul>
+        <Link to="/lecturer/submissions" className="mt-5 inline-flex items-center gap-1 text-xs font-semibold text-[#274b82]">View all submissions <ArrowRight size={14} /></Link>
+      </section>
+    </div>
+  </AdminPage>;
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\student\index.tsx ===
+import Overview from "./Overview";
+import Profile from "./Profile";
+import Registration from "./Registration";
+import MyCourses from "./MyCourses";
+import Results from "./Results";
+import History from "./History";
+
+export type StudentSection = "overview" | "profile" | "registration" | "courses" | "results" | "history";
+
+/** Routes a student menu section to its page. All data comes from /api/student/*. */
+export default function StudentPages({ section }: { section: string }) {
+  switch (section) {
+    case "profile": return <Profile />;
+    case "registration": return <Registration />;
+    case "courses": return <MyCourses />;
+    case "results": return <Results />;
+    case "history": return <History />;
+    default: return <Overview />;
+  }
+}
+
+=== C:\Users\Systems Technologies\Downloads\university-education-portal\frontend\client\pages\student\Overview.tsx ===
+import { Link } from "react-router-dom";
+import { ArrowRight, Award, BookOpen, ClipboardCheck, FileCheck2 } from "lucide-react";
+import { api } from "../../lib/api";
+import { useAsyncData } from "../../hooks/useAsyncData";
+import { AdminPage, ErrorState, LoadingBlock, PageHeader, StatCard, StatusBadge } from "../../components/admin/ui";
+
+export default function Overview() {
+  const profile = useAsyncData(() => api.student.profile(), []);
+  const registrations = useAsyncData(() => api.student.registrations(), []);
+  const history = useAsyncData(() => api.student.history(), []);
+
+  const error = profile.error || registrations.error || history.error;
+  if (error) return <AdminPage><ErrorState error={error} onRetry={() => { profile.reload(); registrations.reload(); history.reload(); }} /></AdminPage>;
+  if (!profile.data || !registrations.data || !history.data) return <AdminPage><LoadingBlock /></AdminPage>;
+
+  const p = profile.data;
+  const h = history.data;
+  const latest = registrations.data.data[0];
+
+  return <AdminPage>
+    <PageHeader eyebrow={`${p.departmentName} · ${p.level} level`} title={`Welcome, ${p.name}`} description="Your registration, results and academic record at a glance."
+      actions={<Link to="/student/registration" className="inline-flex items-center gap-2 rounded-lg bg-[#2454b8] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4294]"><ClipboardCheck size={16} /> Register courses</Link>} />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard label="CGPA" value={h.cgpa === null ? "—" : h.cgpa.toFixed(2)} icon={Award} note="From approved results only" />
+      <StatCard label="Current level" value={p.level} icon={BookOpen} note={p.programName} />
+      <StatCard label="Registered units" value={latest?.totalUnits ?? 0} icon={ClipboardCheck} note={latest ? `${latest.sessionName} · ${latest.semester} semester` : "No registration yet"} />
+      <StatCard label="Approved results" value={h.totalCourses} icon={FileCheck2} note={`${h.totalUnits} units earned`} />
+    </div>
+    <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1fr_1.2fr]">
+      <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+        <h2 className="text-base font-bold tracking-tight">My details</h2>
+        <dl className="mt-4 space-y-3 text-sm">
+          {([["Matric number", p.matricNo], ["Department", p.departmentName], ["Faculty", p.facultyName], ["Program", p.programName], ["Email", p.email]] as const).map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="text-[#8a909a]">{label}</dt><dd className="text-right font-semibold text-[#343c48]">{value}</dd></div>)}
+          <div className="flex justify-between gap-4"><dt className="text-[#8a909a]">Status</dt><dd><StatusBadge value={p.status} /></dd></div>
+        </dl>
+        <Link to="/student/profile" className="mt-5 inline-flex items-center gap-1 text-xs font-semibold text-[#274b82]">Update contact details <ArrowRight size={14} /></Link>
+      </section>
+      <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
+        <h2 className="text-base font-bold tracking-tight">Current registration</h2>
+        {latest ? <>
+          <p className="mt-1 text-xs text-[#999fa7]">{latest.sessionName} · {latest.semester} semester · {latest.totalUnits} units</p>
+          <ul className="mt-4 divide-y divide-[#f1f2f4] text-sm">
+            {latest.courses.map((c) => <li key={c.courseId} className="flex items-center justify-between py-2.5"><span><span className="font-semibold text-[#343c48]">{c.code}</span> <span className="text-[#8a909a]">{c.title}</span></span><span className="text-xs text-[#8a909a]">{c.units} units</span></li>)}
+          </ul>
+        </> : <p className="mt-4 rounded-lg bg-[#f7f9fc] p-4 text-sm text-[#8a909a]">You have not registered any course yet.</p>}
+        <Link to="/student/courses" className="mt-5 inline-flex items-center gap-1 text-xs font-semibold text-[#274b82]">View my courses <ArrowRight size={14} /></Link>
+      </section>
+    </div>
+  </AdminPage>;
+}

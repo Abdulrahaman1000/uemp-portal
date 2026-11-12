@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Admin\ProgramController;
 use App\Http\Controllers\Api\Admin\SemesterController;
 use App\Http\Controllers\Api\Admin\SessionController;
 use App\Http\Controllers\Api\Admin\UserController;
+use App\Http\Controllers\Api\Admin\UserManagementController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentCourseController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController;
@@ -65,6 +66,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/users', [UserController::class, 'index']);
         Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
         Route::patch('/users/{user}/role', [UserController::class, 'updateRole']);
+        // T2.11a: create staff accounts and assign users to departments
+        Route::post('/users', [UserManagementController::class, 'store']);
+        Route::patch('/users/{user}/department', [UserManagementController::class, 'updateDepartment']);
         // T2.5d: read-only lists
         Route::get('/students', [OversightController::class, 'students']);
         Route::get('/lecturers', [OversightController::class, 'lecturers']);
