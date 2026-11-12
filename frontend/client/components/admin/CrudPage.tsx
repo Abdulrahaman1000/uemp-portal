@@ -115,7 +115,7 @@ export function CrudPage<R extends { id: string }>({ resource, eyebrow, title, s
       rows={rows}
       columns={allColumns}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage={needle ? "No records match your search." : `No ${title.toLowerCase()} yet.`}
       toolbar={<SearchInput label={`Search ${title}`} value={search} onChange={(value) => { setSearch(value); setPage(1); }} />}
       page={data?.meta.current_page ?? page}

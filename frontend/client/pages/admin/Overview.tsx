@@ -39,7 +39,7 @@ export default function Overview({ go }: { go: (section: AdminSection) => void }
         <StatCard label="Faculties" value={dashboard.totalFaculties} icon={Building2} note={`${dashboard.totalDepartments} departments`} />
         <StatCard label="Active programs" value={dashboard.activePrograms} icon={BookOpen} />
       </div>
-      <div className="mt-6 grid gap-5 xl:grid-cols-[1.65fr_1fr]">
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1.65fr_1fr]">
         <DataTable
           title="Recent registrations"
           subtitle="Latest student course registrations"

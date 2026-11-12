@@ -39,7 +39,7 @@ export default function Profile() {
 
   return <AdminPage>
     <PageHeader eyebrow="Account" title="My profile" description="You can update your phone, address and date of birth. Academic details are managed by the department." />
-    <div className="grid gap-5 xl:grid-cols-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
       <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
         <div className="flex items-center gap-2"><h2 className="text-base font-bold tracking-tight">Academic details</h2><Lock size={14} className="text-[#a0a6ae]" /></div>
         <dl className="mt-4 space-y-3 text-sm">

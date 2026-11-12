@@ -11,7 +11,7 @@ export default function Programs() {
 
   return <AdminPage>
     <PageHeader eyebrow="Academics" title="Levels & programs" description="Programs offered by your department and how many students are at each level. New programs are created by the university administrator." />
-    <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1.5fr_1fr]">
       {programs.error ? <ErrorState error={programs.error} onRetry={programs.reload} /> : <DataTable<Program>
         title="Programs" subtitle={programs.data ? `${programs.data.meta.total} programs` : undefined}
         rows={programs.data?.data ?? []} rowKey={(r) => r.id} loading={programs.loading && !programs.data}

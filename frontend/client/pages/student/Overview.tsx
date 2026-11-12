@@ -26,7 +26,7 @@ export default function Overview() {
       <StatCard label="Registered units" value={latest?.totalUnits ?? 0} icon={ClipboardCheck} note={latest ? `${latest.sessionName} · ${latest.semester} semester` : "No registration yet"} />
       <StatCard label="Approved results" value={h.totalCourses} icon={FileCheck2} note={`${h.totalUnits} units earned`} />
     </div>
-    <div className="mt-6 grid gap-5 xl:grid-cols-[1fr_1.2fr]">
+    <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1fr_1.2fr]">
       <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
         <h2 className="text-base font-bold tracking-tight">My details</h2>
         <dl className="mt-4 space-y-3 text-sm">

@@ -34,7 +34,7 @@ export default function Overview() {
       <StatCard label="Awaiting review" value={d.submissionsByStatus.submitted} icon={CalendarDays} note="Submitted to the department" />
     </div>
 
-    <div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+    <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[1.4fr_1fr]">
       <section className="rounded-xl border border-[#e9ebee] bg-white p-5 sm:p-6">
         <h2 className="text-base font-bold tracking-tight">Needs your attention</h2>
         <p className="mt-1 text-xs text-[#999fa7]">Results sent back for correction or reopened by the department.</p>

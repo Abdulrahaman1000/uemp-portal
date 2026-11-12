@@ -28,15 +28,15 @@ interface DataTableProps<T> {
 }
 
 export function DataTable<T>({ title, subtitle, rows, columns, rowKey, loading = false, emptyMessage = "No records found.", toolbar, action, page = 1, lastPage = 1, total, onPageChange }: DataTableProps<T>) {
-  return <section className="overflow-hidden rounded-xl border border-[#e9ebee] bg-white">
+  return <section className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[#e9ebee] bg-white">
     <div className="flex flex-wrap items-center justify-between gap-4 p-5">
       <div><h2 className="text-base font-bold tracking-tight">{title}</h2>{subtitle && <p className="mt-1 text-xs text-[#9aa1ab]">{subtitle}</p>}</div>
       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">{toolbar}{action}</div>
     </div>
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left">
+      <table className="w-full text-left" style={{ minWidth: Math.max(640, columns.length * 140) }}>
         <thead className="bg-[#f8f9fa] text-[10px] font-semibold uppercase tracking-[.09em] text-[#9ca2ab]">
-          <tr>{columns.map((column) => <th key={column.key} className={`px-5 py-3.5 font-semibold ${column.className ?? ""}`}>{column.header}</th>)}</tr>
+          <tr>{columns.map((column) => <th key={column.key} className={`whitespace-nowrap px-5 py-3.5 font-semibold ${column.className ?? ""}`}>{column.header}</th>)}</tr>
         </thead>
         <tbody>
           {loading
