@@ -14,11 +14,11 @@ class LikeSearch
             return $query;
         }
 
-        $pattern = '%'.strtolower(addcslashes($term, '%_\\')).'%';
+        $pattern = '%'.strtolower(str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term)).'%';
 
         return $query->where(function (Builder $inner) use ($columns, $pattern) {
             foreach ($columns as $column) {
-                $inner->orWhereRaw("LOWER({$column}) LIKE ? ESCAPE '\\'", [$pattern]);
+                $inner->orWhereRaw("LOWER({$column}) LIKE ? ESCAPE '!'", [$pattern]);
             }
         });
     }

@@ -23,11 +23,11 @@ trait ManagesRecords
             return $query;
         }
 
-        $like = '%'.addcslashes(mb_strtolower($term), '%_\\').'%';
+        $like = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($term)).'%';
 
         return $query->where(function (Builder $q) use ($columns, $like) {
             foreach ($columns as $column) {
-                $q->orWhereRaw("LOWER({$column}) LIKE ? ESCAPE '\\'", [$like]);
+                $q->orWhereRaw("LOWER({$column}) LIKE ? ESCAPE '!'", [$like]);
             }
         });
     }
