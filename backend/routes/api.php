@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\DeptAdmin\DepartmentCourseController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentDashboardController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentPeopleController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentListController;
+use App\Http\Controllers\Api\DeptAdmin\DepartmentProgramController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentReportController;
 use App\Http\Controllers\Api\DeptAdmin\DepartmentSubmissionController;
 use App\Http\Controllers\Api\Lecturer\LecturerCourseController;
@@ -96,6 +97,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             ->whereIn('type', ['students', 'registrations', 'results']);
         // T2.6c: department management (department is always the admin's own)
         Route::get('/programs', [DepartmentPeopleController::class, 'programs']);
+        // T2.11b: create, edit and delete programs of the own department
+        Route::post('/programs', [DepartmentProgramController::class, 'store']);
+        Route::put('/programs/{program}', [DepartmentProgramController::class, 'update']);
+        Route::delete('/programs/{program}', [DepartmentProgramController::class, 'destroy']);
         Route::post('/courses', [DepartmentCourseController::class, 'store']);
         Route::put('/courses/{course}', [DepartmentCourseController::class, 'update']);
         Route::delete('/courses/{course}', [DepartmentCourseController::class, 'destroy']);
