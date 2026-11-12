@@ -300,3 +300,4 @@ The project was SUBMITTED through the Google Form on Thu 12 Nov. Repo, live app 
 - Expected tests: 165 + 134-era counts as they are now, plus 10 (7a) and 6 (7b). Use the number `php artisan test` reports before 7a as the baseline.
 - Do NOT change code after about 6 PM Thu. If a zip fails, do not push it: the live app keeps working from `main`.
 - Docs to update when both are pushed: one line each in README and `docs/TECHNICAL.md` (super admin can create users and move lecturers and dept admins between departments; dept admins manage programs of their own department).
+- **Login page (Thu 12 Nov):** the four demo accounts (superadmin@, deptadmin@, lecturer@, student@ northstar.edu, password demo123) are now shown on the login page in every mode (before: mock mode only). Clicking one fills the form; the user still presses Sign in. File: `frontend/client/pages/Login.tsx`. Never use that password for a real account.

@@ -2,11 +2,18 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, GraduationCap } from "lucide-react";
 import { useAuth } from "../lib/auth";
-import { USE_MOCK } from "../lib/api";
-import { MOCK_PASSWORD, mockUsers } from "../lib/mock";
-import { roleName, rolePath } from "../lib/navigation";
+import { rolePath } from "../lib/navigation";
 
 const fieldClass = "w-full rounded-lg border border-[#dce3ef] bg-white px-4 text-sm outline-none focus:border-[#5477db] focus:ring-2 focus:ring-[#e4ebff]";
+
+/** Seeded demo accounts for reviewers. They exist only in the demo database; never reuse this password for a real account. */
+const DEMO_PASSWORD = "demo123";
+const DEMO_ACCOUNTS = [
+  { label: "Super admin", email: "superadmin@northstar.edu" },
+  { label: "Department admin (Computer Science)", email: "deptadmin@northstar.edu" },
+  { label: "Lecturer", email: "lecturer@northstar.edu" },
+  { label: "Student", email: "student@northstar.edu" },
+];
 
 export default function Login() {
   const { login, user } = useAuth();
@@ -75,20 +82,19 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Demo accounts exist only in mock mode, never against the real API. */}
-        {USE_MOCK && <div className="mt-8 rounded-xl border border-[#dfe7f6] bg-white p-5">
+        <div className="mt-8 rounded-xl border border-[#dfe7f6] bg-white p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Demo credentials</h2>
-            <span className="rounded-full bg-[#eef3ff] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5373c8]">Demo mode</span>
+            <h2 className="text-sm font-semibold">Demo accounts</h2>
+            <span className="rounded-full bg-[#eef3ff] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5373c8]">For reviewers</span>
           </div>
-          <p className="mt-1 text-xs text-[#91a0b7]">Choose an account to fill in the form.</p>
+          <p className="mt-1 text-xs text-[#91a0b7]">Click an account to fill in the form, then press Sign in. Password for all accounts: <span className="font-semibold text-[#536581]">{DEMO_PASSWORD}</span></p>
           <div className="mt-4 space-y-2">
-            {mockUsers.map((account) => <button key={account.id} type="button" onClick={() => { setEmail(account.email); setPassword(MOCK_PASSWORD); }} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[#f4f7ff]">
-              <span className="font-semibold text-[#536581]">{roleName[account.role]}</span>
-              <span className="text-[#8c9bb2]">{account.email} / {MOCK_PASSWORD}</span>
+            {DEMO_ACCOUNTS.map((account) => <button key={account.email} type="button" onClick={() => { setEmail(account.email); setPassword(DEMO_PASSWORD); setError(""); }} className="flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[#f4f7ff] sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+              <span className="font-semibold text-[#536581]">{account.label}</span>
+              <span className="text-[#8c9bb2]">{account.email}</span>
             </button>)}
           </div>
-        </div>}
+        </div>
       </div>
     </div>
   </div>;
