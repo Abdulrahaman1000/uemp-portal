@@ -80,7 +80,7 @@ export default function Approvals() {
     <PageHeader eyebrow="Results" title="Result approvals" description="Review the results your lecturers submitted. Approved results become visible to students; a rejection needs feedback." />
     {error ? <ErrorState error={error} onRetry={reload} /> : <DataTable<ResultSubmission>
       title="Submissions" subtitle={data ? `${data.meta.total} found` : undefined}
-      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading && !data}
+      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading}
       page={page} lastPage={data?.meta.last_page} total={data?.meta.total} onPageChange={setPage}
       emptyMessage="No submissions match this filter."
       toolbar={<>

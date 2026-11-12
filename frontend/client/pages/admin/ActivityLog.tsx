@@ -38,7 +38,7 @@ export default function ActivityLog() {
       title="Recent activity"
       rows={rows}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage="No activity matches your filters."
       toolbar={<>
         <input aria-label="Filter by user" placeholder="User" className={`${inputClass} w-auto min-w-[140px]`} value={user} onChange={(e) => reset(setUser)(e.target.value)} />

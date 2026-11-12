@@ -71,7 +71,7 @@ export default function Courses() {
       actions={<button className={primaryClass} onClick={() => setDialog({ row: null })}><Plus size={16} /> Add course</button>} />
     {error ? <ErrorState error={error} onRetry={reload} /> : <DataTable<Course>
       title="Department courses" subtitle={data ? `${data.meta.total} found` : undefined}
-      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading && !data}
+      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading}
       page={page} lastPage={data?.meta.last_page} total={data?.meta.total} onPageChange={setPage}
       toolbar={<>
         <select aria-label="Filter by level" className={`${inputClass} !w-auto`} value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{LEVELS.map((l) => <option key={l} value={l}>{l} level</option>)}</select>

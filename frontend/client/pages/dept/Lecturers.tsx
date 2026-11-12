@@ -56,7 +56,7 @@ export default function Lecturers() {
       actions={<button className={primaryClass} onClick={() => setDialog({ row: null })}><Plus size={16} /> Add lecturer</button>} />
     {error ? <ErrorState error={error} onRetry={reload} /> : <DataTable<Lecturer>
       title="Department lecturers" subtitle={data ? `${data.meta.total} found` : undefined}
-      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading && !data}
+      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading}
       page={page} lastPage={data?.meta.last_page} total={data?.meta.total} onPageChange={setPage}
       toolbar={<SearchInput label="Search lecturers" value={search} onChange={(v) => { setSearch(v); setPage(1); }} />}
       columns={[

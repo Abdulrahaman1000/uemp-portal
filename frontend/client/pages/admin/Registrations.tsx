@@ -27,7 +27,7 @@ export default function Registrations() {
       title="All registrations"
       rows={rows}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage="No registrations match your filters."
       toolbar={<>
         <SearchInput label="Search registrations" value={search} onChange={(value) => { setSearch(value); setPage(1); }} />

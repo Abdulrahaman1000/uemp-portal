@@ -66,7 +66,7 @@ export default function Users() {
       title="All users"
       rows={rows}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage="No users match your filters."
       toolbar={filters}
       page={data?.meta.current_page ?? page}

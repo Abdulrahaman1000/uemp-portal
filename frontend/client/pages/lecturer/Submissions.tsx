@@ -22,7 +22,7 @@ export default function Submissions() {
       title="Result submissions"
       rows={data?.data ?? []}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage="No result submissions match your search."
       toolbar={<>
         <SearchInput label="Search submissions" value={search} onChange={(value) => { setSearch(value); setPage(1); }} />

@@ -19,7 +19,7 @@ export default function Registrations() {
     <PageHeader eyebrow="Registration" title="Course registrations" description="What your students registered, by semester. Students register only courses of their own department, program, level and the current semester." />
     {error ? <ErrorState error={error} onRetry={reload} /> : <DataTable<RegistrationRecord>
       title="Registrations" subtitle={data ? `${data.meta.total} found` : undefined}
-      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading && !data}
+      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading}
       page={page} lastPage={data?.meta.last_page} total={data?.meta.total} onPageChange={setPage}
       toolbar={<>
         <select aria-label="Filter by level" className={`${inputClass} !w-auto`} value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{LEVELS.map((l) => <option key={l} value={l}>{l} level</option>)}</select>

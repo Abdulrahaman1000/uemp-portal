@@ -45,7 +45,7 @@ export default function Courses() {
       subtitle={data ? `${data.meta.total} ${data.meta.total === 1 ? "course" : "courses"}` : undefined}
       rows={data?.data ?? []}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage="No courses are assigned to you in the current session."
       columns={[
         { key: "course", header: "Course", render: (row) => <div><div className="font-semibold text-[#343c48]">{row.code}</div><div className="mt-1 text-[11px] text-[#a0a6ae]">{row.title}</div></div> },

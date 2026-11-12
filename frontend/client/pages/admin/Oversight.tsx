@@ -22,7 +22,7 @@ export default function Oversight() {
       title="Result submissions"
       rows={rows}
       rowKey={(row) => row.id}
-      loading={loading && !data}
+      loading={loading}
       emptyMessage="No result submissions match this status."
       toolbar={<select aria-label="Filter by status" className={`${inputClass} w-auto min-w-[150px]`} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
         <option value="">All statuses</option>{STATUSES.map((value) => <option key={value} value={value}>{titleCase(value)}</option>)}

@@ -51,7 +51,7 @@ export default function Assignments() {
     <PageHeader eyebrow="Academics" title="Course assignments" description="Choose which lecturer teaches each course this session. Only the assigned lecturer can enter its results." />
     {error ? <ErrorState error={error} onRetry={reload} /> : <DataTable<Course>
       title="Courses and lecturers" subtitle={data ? `${data.meta.total} courses` : undefined}
-      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading && !data}
+      rows={data?.data ?? []} rowKey={(r) => r.id} loading={loading}
       page={page} lastPage={data?.meta.last_page} total={data?.meta.total} onPageChange={setPage}
       toolbar={<SearchInput label="Search courses" value={search} onChange={(v) => { setSearch(v); setPage(1); }} />}
       columns={[
